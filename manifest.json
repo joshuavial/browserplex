@@ -199,6 +199,65 @@
       ],
       "decision": {},
       "timestamp": "2026-05-29T20:06:11Z"
+    },
+    {
+      "gate_id": "7p0.2-review",
+      "phase": "review",
+      "round": 3,
+      "tier": 2,
+      "status": "pass",
+      "reviewed_stages": [
+        {
+          "stage": "review",
+          "role": "review",
+          "artifact": "4743d3b7bbbf5e2dd97e61a42c4e0b29e0509e042e66e44002f954847fd22e40"
+        }
+      ],
+      "seats": [
+        {
+          "seat": "agy",
+          "harness": {
+            "name": "agy",
+            "version": "0"
+          },
+          "provider": {
+            "name": "google",
+            "model": "gemini-3.1-pro"
+          },
+          "verdict": "go",
+          "timestamp": "2026-05-29T20:22:36Z"
+        },
+        {
+          "seat": "claude-opus",
+          "harness": {
+            "name": "claude-opus",
+            "version": "0"
+          },
+          "provider": {
+            "name": "anthropic",
+            "model": "claude-opus-4-8"
+          },
+          "verdict": "go",
+          "timestamp": "2026-05-29T20:22:36Z"
+        },
+        {
+          "seat": "codex",
+          "harness": {
+            "name": "codex",
+            "version": "0"
+          },
+          "provider": {
+            "name": "openai",
+            "model": "gpt-5.5-xhigh"
+          },
+          "verdict": "go",
+          "timestamp": "2026-05-29T20:22:36Z"
+        }
+      ],
+      "decision": {
+        "escalation_reason": "2 BLOCK->fix->re-review rounds: Codex (oversized-line cap hole), then agy (socket.end write-after-end + umask global race); both resolved, all seats PASS round 3"
+      },
+      "timestamp": "2026-05-29T20:22:36Z"
     }
   ]
 }
