@@ -1,0 +1,160 @@
+ROLE: RE-REVIEW of fixes to the `bp prime` AI primer (browserplex bead le1). Round 1: agy BLOCK +
+Opus BLOCK — the primer documented `bp wait --selector "#done"` but `wait` takes a POSITIONAL
+selector (only `snapshot` has --selector), so it failed verbatim; plus the generated reference
+omitted global `-s/--session`/`--json` and flag aliases, refs needed `@`-prefix clarification, and
+"-s REQUIRED" wording was imprecise.
+
+PHASE: review (re-review)
+DECISION STANDARD: BLOCK | PASS | PASS_WITH_FOLLOWUPS.
+
+FIXES: `bp wait "#done" -s web` (positional) + `bp wait -s web` (load); refs documented as printed
+`[ref=e1]` and passed as `@e1`; "-s needed; omitting errors"; generated reference now shows flag
+aliases (-b/--browser, -o/--output) + a header noting global -s/--session and --json apply to every
+browser command. Verified the fixed wait forms run correctly verbatim against a real page.
+
+JUDGE: are the round-1 blocking inaccuracies resolved, and is the FULL primer now accurate end-to-end
+(no remaining statement that would make an agent fail first try)? Re-scan the whole corrected output
+below for any other inaccuracy. Cross-check against the code if needed (/Users/jv/projects/browserplex/src/cli).
+
+=== CORRECTED bp prime OUTPUT ===
+# bp — Browserplex CLI primer (for AI agents)
+
+bp drives real browser sessions (Playwright) from the shell. Use it to open pages, read their
+content, interact, screenshot, run JS, and inspect console/network.
+
+## Mental model: a background daemon holds your live sessions
+- A browser session is a live, in-memory browser. It cannot live inside a one-shot CLI process, so
+  bp talks to a **background daemon** that owns the sessions.
+- The **first** bp command **auto-spawns** the daemon. Every later bp command — even from a different
+  terminal or a separate script invocation — **reuses the same live sessions**. You do NOT manage the
+  daemon; just run commands.
+- Sessions persist until you `bp session destroy` them or the daemon idle-exits (no sessions/clients
+  for the grace period; default 5 min). Console/network buffers live in the session across commands.
+
+## The loop you will almost always run
+```
+bp session create web --browser chromium   # once; pick chromium (default) | firefox | webkit | camoufox | electron
+bp navigate <url> -s web                    # -s/--session selects the session; every browser command needs it (omitting it errors)
+bp snapshot -s web                          # READ the page: prints an accessibility tree with refs (@e1, @e2, …)
+bp click @e3 -s web                         # act using a ref FROM THE SNAPSHOT YOU JUST TOOK
+bp eval -s web "document.title"             # run JS in the page; result is JSON (strings are quoted)
+bp session destroy web                      # clean up when done
+```
+
+## The ref workflow — read this, it's the #1 source of mistakes
+- `bp snapshot` prints elements with refs shown as `[ref=e1]`, `[ref=e2]`, …. To act on one, pass it
+  with an `@` prefix — e.g. snapshot shows `button "Submit" [ref=e3]`, so you run `bp click @e3 -s web`.
+  Use refs instead of guessing CSS selectors — they're more reliable.
+- **Refs are valid only for the snapshot you just took.** After ANY page change (navigate, click that
+  loads new content, etc.) the old refs are stale — **re-run `bp snapshot`** before acting again.
+  Acting on a stale ref gives a clear "not found / timeout" error.
+- **Ref numbers depend on snapshot options.** `bp snapshot --interactive` (interactive elements only)
+  numbers differently than a full snapshot. Always use refs from the SAME snapshot call you're acting
+  on. Prefer `--interactive` for forms/buttons (smaller, focused output).
+- You can always fall back to a CSS selector (e.g. `bp click "#submit"`) instead of a ref.
+
+## Output & scripting
+- Default output is human text (the same strings the MCP server returns).
+- Add **`--json`** to any command for `{ok, text, data, …}` you can parse. `data` carries structured
+  payloads (session_list, console, network, evaluate result). Prefer --json when scripting.
+- `bp eval` returns the JS result as JSON: numbers print bare (`2`), strings are quoted (`"hi"`),
+  `undefined` prints `undefined` (and `text:null` under --json).
+
+## Exit codes
+- `0` success · `1` the action failed (e.g. selector not found — the message is AI-friendly and
+  suggests a fix) · `2` usage error (unknown command, missing/extra argument, bad flag).
+
+## Handy specifics
+- `bp screenshot -s web -o out.png` writes the PNG to disk (path is resolved to absolute).
+- `bp eval -s web "1+1"` OR pipe JS on stdin: `echo 'document.title' | bp eval -s web`.
+- `bp fill -s web --field "#user=alice" --field "#pw=secret"` (repeatable; split on the FIRST `=`, so
+  selectors/values may contain `=`). Or `--fields-json '[{"selector":"#user","value":"alice"}]'`.
+- `bp wait "#done" -s web` waits for an element (selector is a POSITIONAL, not a flag); `bp wait -s web`
+  (no selector) waits for page load.
+- `bp console -s web --json` / `bp network -s web --json` read the buffers captured since the session
+  started (use `--clear` to reset).
+- `bp tabs -s web list|new|switch|close` (`--index`, `--url`).
+- A token that looks like a flag can be passed as a literal value after `--`:
+  `bp type "#in" -- -h` types the text `-h`.
+
+## Driving an Electron app (e.g. a desktop app under test)
+```
+bp session create app --browser electron \
+  --executable-path /path/app/node_modules/.bin/electron \
+  --electron-arg /path/app --cwd /path/app --env MY_TEST_MODE=1
+bp eval -s app "window.myPreloadBridge !== undefined"   # eval runs in the renderer; preload bridge is live
+```
+Set `--executable-path` to the target app's Electron binary (bp does not bundle Electron at runtime).
+`webkit`/`camoufox` engines require their Playwright/camoufox browser binaries to be installed.
+
+## Daemon control & environment
+- `bp daemon status` — is it running, pid, active sessions · `bp daemon stop` — stop it ·
+  `bp serve` — run it in the foreground (logs to the terminal).
+- `BROWSERPLEX_IDLE_MS` — idle-exit grace in ms (default 300000; `0` disables).
+- `BROWSERPLEX_DIR` — relocate the runtime dir (socket/pid/log + stored sessions; default ~/.browserplex).
+
+## Full command reference
+Every browser command also accepts the global flags `-s/--session <name>` and `--json` (omitted from
+the per-command lines below). Positionals are shown as `<required>` / `[optional]`.
+
+## session
+  bp session create <name>                 Create a named browser session
+      flags: -b/--browser <v>  --headless  --executable-path <v>  --electron-arg <v>…  --cwd <v>  --env <v>…
+  bp session list                          List active sessions
+  bp session destroy <name>                Destroy a session
+
+## storage
+  bp storage save <domain>                 Save session storage for a domain
+      flags: --name <v>
+  bp storage load <name> <domain>          Load stored storage into a new session
+      flags: --storage-name <v>  -b/--browser <v>  --headless
+  bp storage list                          List stored sessions
+      flags: --domain <v>
+  bp storage delete <domain>               Delete a stored session
+      flags: --name <v>
+  bp storage lock <domain>                 Acquire a domain lock
+  bp storage unlock <domain>               Release a domain lock
+
+## browser
+  bp navigate <url>                        Navigate to a URL
+  bp back                                  Go back in history
+  bp snapshot                              Accessibility snapshot with refs
+      flags: --interactive  --compact  --max-depth <v>  --selector <v>
+  bp screenshot                            Screenshot the page
+      flags: -o/--output <v>  --full-page  --max-dimension <v>
+  bp click <selector>                      Click an element
+      flags: --timeout <v>
+  bp type <selector> <text>                Type into an input
+      flags: --submit  --timeout <v>
+  bp press <key>                           Press a key
+  bp hover <selector>                      Hover an element
+      flags: --timeout <v>
+  bp drag <sourceSelector> <targetSelector> Drag one element to another
+      flags: --timeout <v>
+  bp select <selector>                     Select a dropdown option
+      flags: --value <v>  --label <v>  --index <v>  --timeout <v>
+  bp upload <selector>                     Upload file(s) to an input
+      flags: --file <v>…  --timeout <v>
+  bp fill                                  Fill multiple form fields
+      flags: --field <v>…  --fields-json <v>  --timeout <v>
+  bp dialog <action>                       Handle the next JS dialog
+      flags: --prompt-text <v>
+  bp wait [selector]                       Wait for an element or load
+      flags: --state <v>  --timeout <v>
+  bp eval [script]                         Evaluate JS in the page
+  bp resize <width> <height>               Resize the viewport
+  bp console                               Get console messages
+      flags: --clear
+  bp network                               Get network requests
+      flags: --clear
+  bp tabs [action]                         List/switch/close tabs
+      flags: --index <v>  --url <v>
+
+Run `bp <command> --help` for a single command's flags.
+
+
+RETURN (exactly 4 lines):
+1) Verdict: BLOCK | PASS | PASS_WITH_FOLLOWUPS
+2) Blocking findings (or "none")
+3) Non-blocking follow-ups (or "none")
+4) Confidence (low/med/high) + (agy only) your underlying model name
