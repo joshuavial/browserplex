@@ -1,5 +1,5 @@
 {
-  "manifest_version": 2,
+  "manifest_version": 3,
   "run_id": "bp-7p0.6",
   "workflow": "manual",
   "workflow_version": "manual-v1",
@@ -32,6 +32,54 @@
         "size": 4021
       },
       "timestamp": "2026-05-29T21:36:35.546789Z"
+    }
+  ],
+  "gates": [
+    {
+      "gate_id": "7p0.6-plan",
+      "phase": "plan",
+      "round": 1,
+      "tier": 1,
+      "status": "pass",
+      "reviewed_stages": [
+        {
+          "stage": "plan",
+          "role": "plan",
+          "artifact": "f00e6bb90228c557d5bc8d2566d0a6b70e66c9f8af4edbfcd7b9f65109208d2e"
+        }
+      ],
+      "seats": [
+        {
+          "seat": "agy",
+          "harness": {
+            "name": "agy",
+            "version": "0"
+          },
+          "provider": {
+            "name": "google",
+            "model": "gemini-3.1-pro"
+          },
+          "verdict": "go",
+          "timestamp": "2026-05-29T21:36:35Z"
+        },
+        {
+          "seat": "claude-opus",
+          "harness": {
+            "name": "claude-opus",
+            "version": "0"
+          },
+          "provider": {
+            "name": "anthropic",
+            "model": "claude-opus-4-8"
+          },
+          "verdict": "go",
+          "timestamp": "2026-05-29T21:36:35Z"
+        }
+      ],
+      "decision": {
+        "degraded_reason": "Level 1 test bead (agy+Opus). Both PASS."
+      },
+      "timestamp": "2026-05-29T21:36:35Z"
     }
   ]
 }
