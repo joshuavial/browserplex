@@ -1,0 +1,347 @@
+ROLE: FINAL REVIEW gate (LEVEL 1: docs + packaging, EPIC-COMPLETING) for browserplex bead .7.
+Ships the `bp` bin, README/CHANGELOG docs, version 0.4.0, and the two CLI-parse fixes (the -h rule was
+revised after a plan BLOCK to be value-slot-aware).
+
+PHASE: review
+DECISION STANDARD: BLOCK | PASS | PASS_WITH_FOLLOWUPS.
+
+ACCEPTANCE: npm pack includes both bins; README documents bp usage; CHANGELOG updated.
+
+VERIFICATION (objective): build clean (0.4.0); npm test 91/91 (added 4 CLI parsing/help tests); npm
+pack --dry-run ships both bins (browserplex->dist/mcp/server.js, bp->dist/cli/index.js) + all dist
+subdirs; smoke: `bp navigate --help` shows per-command usage (preserved), `bp eval -- -h` treats -h as
+script (not help), `bp fill --field a=b --fields-json '[]'` errors exit 2; no test leaks.
+
+CHANGES TO JUDGE:
+1. CLI -h fix: removed global argv.includes('-h'); parseCommand sets parsed.help for a -h/--help in
+   flag position (before `--`, not a flag value) and short-circuits BEFORE buildArgs; index.ts prints
+   usageFor(parsed.spec). + the --field/--fields-json conflict error.
+2. Packaging: bp bin, version 0.4.0 (package.json + src/mcp/server.ts), files coverage.
+3. Docs: README stale-path fix + CLI/lifecycle/env section; CHANGELOG 0.4.0 + Known limitations.
+
+JUDGE: are the CLI fixes correct (per-command help preserved, value-slot-aware, no buildArgs-before-
+help bug)? Is packaging correct/complete? Do the docs accurately match the shipped behavior (paths,
+commands, env knobs, electron)? Any inaccuracy or epic-incompleteness? Is Level 1 right?
+
+=== CODE DIFF (src + package.json) ===
+diff --git a/package.json b/package.json
+index 824ec46..3a22274 100644
+--- a/package.json
++++ b/package.json
+@@ -1,12 +1,13 @@
+ {
+   "name": "browserplex",
+-  "version": "0.3.0",
+-  "description": "MCP server for managing multiple named browser sessions with Playwright",
++  "version": "0.4.0",
++  "description": "MCP server + bp CLI for managing multiple named browser sessions with Playwright",
+   "type": "module",
+   "main": "dist/mcp/server.js",
+   "types": "dist/mcp/server.d.ts",
+   "bin": {
+-    "browserplex": "./dist/mcp/server.js"
++    "browserplex": "./dist/mcp/server.js",
++    "bp": "./dist/cli/index.js"
+   },
+   "files": [
+     "dist",
+diff --git a/src/__tests__/cli-e2e.test.ts b/src/__tests__/cli-e2e.test.ts
+index b0f166b..e6865fc 100644
+--- a/src/__tests__/cli-e2e.test.ts
++++ b/src/__tests__/cli-e2e.test.ts
+@@ -20,25 +20,53 @@ function bp(args: string[], input?: string): Promise<{ code: number; out: string
+   });
+ }
+ 
+-describe('bp CLI e2e (separate processes, isolated daemon dir)', () => {
+-  beforeAll(async () => {
+-    dir = await fs.mkdtemp(path.join(os.tmpdir(), 'bp-cli-'));
+-    // idle disabled so the daemon persists across the separate-process commands in this suite
+-    env = { ...process.env, BROWSERPLEX_DIR: dir, BROWSERPLEX_IDLE_MS: '0' };
++// File-level isolation so EVERY bp invocation (incl. the parsing tests, one of which auto-spawns a
++// daemon) uses a unique temp BROWSERPLEX_DIR — never the real ~/.browserplex.
++beforeAll(async () => {
++  dir = await fs.mkdtemp(path.join(os.tmpdir(), 'bp-cli-'));
++  env = { ...process.env, BROWSERPLEX_DIR: dir, BROWSERPLEX_IDLE_MS: '0' };
++});
++afterAll(async () => {
++  await bp(['daemon', 'stop']).catch(() => {});
++  try {
++    const pid = parseInt(await fs.readFile(path.join(dir, 'daemon.pid'), 'utf8'), 10);
++    process.kill(pid, 'SIGTERM');
++  } catch {
++    /* gone */
++  }
++  await sleep(300);
++  await fs.rm(dir, { recursive: true, force: true });
++});
++
++describe('bp CLI parsing/help', () => {
++  it('top-level --help lists commands', async () => {
++    const r = await bp(['--help']);
++    expect(r.code).toBe(0);
++    expect(r.out).toMatch(/session create/);
++    expect(r.out).toMatch(/serve/);
+   });
+-  afterAll(async () => {
+-    await bp(['daemon', 'stop']).catch(() => {});
+-    // belt-and-suspenders: kill the daemon by pid if still around
+-    try {
+-      const pid = parseInt(await fs.readFile(path.join(dir, 'daemon.pid'), 'utf8'), 10);
+-      process.kill(pid, 'SIGTERM');
+-    } catch {
+-      /* gone */
+-    }
+-    await sleep(300);
+-    await fs.rm(dir, { recursive: true, force: true });
++
++  it('per-command --help is preserved (value-slot-aware)', async () => {
++    const r = await bp(['navigate', '--help']);
++    expect(r.code).toBe(0);
++    expect(r.out).toMatch(/Usage: bp navigate <url>/);
+   });
+ 
++  it('a -h after -- is a value, NOT help', async () => {
++    // `eval -- -h` => script is the literal "-h"; with no session it errors, NOT help.
++    const r = await bp(['eval', '--', '-h']);
++    expect(r.out).not.toMatch(/Usage:/);
++    expect(r.err).not.toMatch(/Usage:/);
++  });
++
++  it('--field and --fields-json together is an error', async () => {
++    const r = await bp(['fill', '--field', 'a=b', '--fields-json', '[]']);
++    expect(r.code).toBe(2);
++    expect(r.err).toMatch(/either --field or --fields-json/);
++  });
++});
++
++describe('bp CLI e2e (separate processes, isolated daemon dir)', () => {
+   it('auto-spawns the daemon and reuses a live session across separate processes', async () => {
+     const create = await bp(['session', 'create', 'app', '-b', 'chromium', '--headless']);
+     expect(create.code).toBe(0);
+diff --git a/src/cli/commands.ts b/src/cli/commands.ts
+index aba3972..c5d8844 100644
+--- a/src/cli/commands.ts
++++ b/src/cli/commands.ts
+@@ -259,6 +259,7 @@ export interface Parsed {
+   spec: CommandSpec;
+   args: Record<string, unknown>;
+   json: boolean;
++  help: boolean;
+ }
+ 
+ export class CliError extends Error {
+@@ -304,6 +305,7 @@ export function parseCommand(argv: string[]): Parsed {
+   const positionals: string[] = [];
+   const flags: Record<string, unknown> = {};
+   let json = false;
++  let help = false;
+   let endOfOpts = false;
+ 
+   for (let i = 0; i < rest.length; i++) {
+@@ -316,6 +318,13 @@ export function parseCommand(argv: string[]): Parsed {
+       json = true;
+       continue;
+     }
++    // Help is value-slot-aware: only a -h/--help reached in flag position (before `--`, and not
++    // consumed as a flag's value via the rest[++i] below) counts. A -h after `--` or as a flag's
++    // value is NOT help.
++    if (!endOfOpts && (t === "-h" || t === "--help")) {
++      help = true;
++      continue;
++    }
+     if (!endOfOpts && isFlag(t)) {
+       const match = flagDefFor(spec, t);
+       if (!match) throw new CliError(`Unknown flag: ${t}\n\n${usageFor(spec)}`);
+@@ -337,8 +346,12 @@ export function parseCommand(argv: string[]): Parsed {
+     }
+   }
+ 
++  // Short-circuit on help BEFORE buildArgs, so `bp eval --help` etc. don't trigger stdin reads or
++  // required-positional/validation errors.
++  if (help) return { spec, args: {}, json, help: true };
++
+   const args = buildArgs(spec, positionals, flags);
+-  return { spec, args, json };
++  return { spec, args, json, help: false };
+ }
+ 
+ /** Map positionals + raw flags into the action-arg object, applying per-command transforms. */
+@@ -372,6 +385,10 @@ function buildArgs(spec: CommandSpec, positionals: string[], flags: Record<strin
+     args.env = obj;
+   }
+ 
++  // --field and --fields-json are mutually exclusive (otherwise fields-json would silently win).
++  if (Array.isArray(args.field) && typeof args.fields === "string") {
++    throw new CliError("use either --field or --fields-json, not both");
++  }
+   // --field selector=value (repeatable) -> fields[] (split on FIRST '=', selectors may contain '=')
+   if (Array.isArray(args.field)) {
+     args.fields = (args.field as string[]).map((kv) => {
+diff --git a/src/cli/index.ts b/src/cli/index.ts
+index f38f621..92055c2 100644
+--- a/src/cli/index.ts
++++ b/src/cli/index.ts
+@@ -1,6 +1,6 @@
+ #!/usr/bin/env node
+ import { DaemonClient } from "../daemon/client.js";
+-import { COMMANDS, parseCommand, render, topUsage, usageFor, CliError } from "./commands.js";
++import { parseCommand, render, topUsage, usageFor, CliError } from "./commands.js";
+ import { serve, status, stop } from "./meta.js";
+ 
+ /**
+@@ -22,14 +22,8 @@ async function main(): Promise<number> {
+   if (argv[0] === "daemon" && argv[1] === "status") return status();
+   if (argv[0] === "daemon" && argv[1] === "stop") return stop();
+ 
+-  // Per-command help: `bp <command...> --help`.
+-  if (argv.includes("-h") || argv.includes("--help")) {
+-    const spec = COMMANDS.find((s) => s.path.every((p, i) => argv[i] === p));
+-    // eslint-disable-next-line no-console
+-    console.log(spec ? usageFor(spec) : topUsage());
+-    return 0;
+-  }
+-
++  // Command parsing handles per-command help in a value-slot-aware way (a -h/--help in flag
++  // position sets parsed.help); a -h after `--` or as a flag value is NOT help.
+   let parsed;
+   try {
+     parsed = parseCommand(argv);
+@@ -41,6 +35,12 @@ async function main(): Promise<number> {
+     throw e;
+   }
+ 
++  if (parsed.help) {
++    // eslint-disable-next-line no-console
++    console.log(usageFor(parsed.spec));
++    return 0;
++  }
++
+   const client = new DaemonClient();
+   try {
+     await client.connect();
+diff --git a/src/mcp/server.ts b/src/mcp/server.ts
+index 236b6e2..be743cf 100644
+--- a/src/mcp/server.ts
++++ b/src/mcp/server.ts
+@@ -8,7 +8,7 @@ import type { ActionResult } from "../core/types.js";
+ 
+ const server = new McpServer({
+   name: "browserplex",
+-  version: "0.3.0",
++  version: "0.4.0",
+ });
+ 
+ type McpContent =
+
+=== DOCS DIFF (README + CHANGELOG) ===
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index ab84eef..e1aa34b 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -1,5 +1,30 @@
+ # Changelog
+ 
++## [0.4.0] - 2026-05-30
++
++### Added
++- **`bp` CLI** front-end (new `bp` bin) over a shared core, backed by a **background daemon** that
++  holds live browser sessions across separate `bp` invocations (auto-spawned on first use; unix
++  socket at `~/.browserplex/daemon.sock`). All 28 tools are reachable as ergonomic subcommands
++  (`bp session …`, `bp navigate`, `bp screenshot -o`, `bp eval`, `bp fill --field`, …).
++- **`electron` session type** — drive an Electron app's renderer through the existing action surface
++  (`session_create type="electron"` with `executablePath`/`electronArgs`/`cwd`/`env`).
++- Daemon lifecycle: idle-exit (`BROWSERPLEX_IDLE_MS`, `0` disables), stale-socket recovery, and
++  `bp serve` / `bp daemon status` / `bp daemon stop`.
++- `BROWSERPLEX_DIR` env to relocate the runtime dir (daemon socket/pid/log + stored sessions).
++- Daemon IPC, CLI e2e, and protocol unit tests.
++
++### Changed
++- Internal refactor: framework-agnostic core under `src/core`; the MCP server moved to
++  `dist/mcp/server.js` (the `browserplex` bin name and `npx browserplex` usage are unchanged). MCP
++  tool surface is byte-identical.
++
++### Known limitations
++- The `electron` type opens a real window (not headless); Linux CI needs a virtual display (xvfb).
++- An abandoned/open client connection suppresses the daemon's idle-exit until it closes.
++- A non-socket file left at the socket path is not auto-recovered (a real dead-daemon leftover is a
++  socket and is recovered); stale-socket recovery is best-effort/non-atomic (fine for single-user).
++
+ ## [0.3.0] - 2026-05-06
+ 
+ ### Added
+diff --git a/README.md b/README.md
+index 9700a76..5494260 100644
+--- a/README.md
++++ b/README.md
+@@ -11,7 +11,11 @@ npm install
+ npm run build
+ ```
+ 
+-## Usage
++browserplex ships two front-ends over one shared core:
++- an **MCP server** (`browserplex` bin) for MCP hosts, and
++- a **`bp` CLI** for shells/scripts (see [CLI (`bp`)](#cli-bp) below).
++
++## Usage (MCP server)
+ 
+ ### Via npx
+ 
+@@ -35,12 +39,50 @@ npm run build
+     "browserplex": {
+       "type": "stdio",
+       "command": "node",
+-      "args": ["/path/to/browserplex/dist/index.js"]
++      "args": ["/path/to/browserplex/dist/mcp/server.js"]
+     }
+   }
+ }
+ ```
+ 
++## CLI (`bp`)
++
++The `bp` command drives the same browser sessions from a shell or script. Because a browser session
++is a live, in-memory Playwright handle, `bp` is a thin client over a **background daemon** that holds
++the sessions: the first `bp` command auto-spawns the daemon (a unix socket at `~/.browserplex/
++daemon.sock`), and later commands — even from other terminals or scripts — reuse the same live
++sessions. The daemon idle-exits once no sessions/clients remain.
++
++```bash
++npm install && npm run build      # or: npm i -g browserplex  (provides the `bp` bin)
++
++bp session create web --browser chromium       # auto-spawns the daemon
++bp navigate https://example.com -s web          # second process, same live session
++bp snapshot -s web --interactive                 # refs (@e1 …) for clicks/types
++bp click @e3 -s web
++bp screenshot -s web -o shot.png                 # write the PNG to disk
++echo 'document.title' | bp eval -s web           # JS from stdin (or: bp eval -s web "1+1")
++bp console -s web --json                          # structured output for scripting
++bp session destroy web
++```
++
++Command groups (run `bp --help`, or `bp <command> --help`, for the full list):
++`bp session create|list|destroy`, `bp storage save|load|list|delete|lock|unlock`, and the browser
++verbs `navigate back snapshot screenshot click type press hover drag select upload fill dialog wait
++eval resize console network tabs`. Global flags: `-s/--session <name>`, `--json`. Notables:
++`screenshot -o <file>`, `fill --field 'sel=value'` (repeatable) or `--fields-json '[…]'`,
++`eval` reads JS from the argument or stdin.
++
++### Daemon control & environment
++
++| Command / env | Description |
++|---------------|-------------|
++| `bp serve` | Run the daemon in the foreground (logs to the terminal) |
++| `bp daemon status` | Show whether the daemon is running, its pid, and active sessions |
++| `bp daemon stop` | Stop the running daemon |
++| `BROWSERPLEX_IDLE_MS` | Idle-exit grace period in ms (default `300000`; `0` disables idle-exit) |
++| `BROWSERPLEX_DIR` | Relocate the runtime dir — daemon socket/pid/log + stored sessions (default `~/.browserplex`) |
++
+ ## Browser Types
+ 
+ | Type | Engine | Use Case |
+
+RETURN (exactly 4 lines):
+1) Verdict: BLOCK | PASS | PASS_WITH_FOLLOWUPS
+2) Blocking findings (or "none")
+3) Non-blocking follow-ups (or "none")
+4) Confidence (low/med/high) + (agy only) your underlying model name

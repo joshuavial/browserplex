@@ -113,6 +113,33 @@
         "size": 896
       },
       "timestamp": "2026-05-29T21:52:06.915632Z"
+    },
+    {
+      "stage": "review",
+      "produced_by": "original",
+      "git_sha": "06e62957fda266d921377b38b6e9e28c8be0da16",
+      "producer": {
+        "harness": {
+          "name": "claude-code",
+          "version": ""
+        },
+        "model": "claude-opus-4-8",
+        "skill": {
+          "id": "review",
+          "repo": "manual",
+          "version": "manual"
+        }
+      },
+      "inputs": [],
+      "output": {
+        "role": "review",
+        "artifact": "2d9622f6339c2e71fde306dd4afde1e60e0f2f13df8fe4abeaaf72e8829e2ef1",
+        "path": "artifacts/sha256/2d/2d9622f6339c2e71fde306dd4afde1e60e0f2f13df8fe4abeaaf72e8829e2ef1",
+        "media_type": "text/markdown; charset=utf-8",
+        "storage": "content",
+        "size": 14238
+      },
+      "timestamp": "2026-05-29T21:54:41.698758Z"
     }
   ],
   "gates": [
