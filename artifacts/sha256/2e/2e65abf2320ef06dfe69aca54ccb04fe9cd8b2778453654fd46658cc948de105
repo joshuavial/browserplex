@@ -1,0 +1,110 @@
+ROLE: RE-REVIEW of a fix for a FINAL REVIEW BLOCK on browserplex bead .3 (CLI client + auto-spawn).
+Round-1 final review: agy PASS_WITH_FOLLOWUPS, Opus PASS_WITH_FOLLOWUPS, Codex **BLOCK**.
+
+PHASE: review (re-review of the changed part)
+DECISION STANDARD: BLOCK | PASS | PASS_WITH_FOLLOWUPS.
+
+THE BLOCK (Codex): spawnDaemon() opened the log file via fs.open() and passed fh.fd to spawn() but
+never closed the FileHandle, leaking the parent's fd / triggering Node's GC "Closing file descriptor"
+warning. (All three seats flagged this fd issue; Codex escalated it to blocking.)
+
+THE FIX (diff below):
+(1) spawnDaemon now keeps the FileHandle, passes fh.fd to the child's stdio, then `await fh.close()`
+    AFTER spawn() returns — the child has already dup'd the fd at spawn time, so it keeps its own
+    copy while the parent closes its handle (no leak, no GC warning). Falls back to "ignore" if the
+    log can't be opened.
+(2) Hardening folded in from the other seats' follow-ups: (a) an unparseable line from the daemon now
+    fails all pending requests + destroys the socket (instead of being ignored, which could hang a
+    request forever under the default no-timeout); (b) request() wraps socket.write/encodeMessage in
+    try/catch and clears the timer + pending entry + rejects on throw; (c) boolean CLI flags
+    (--headless etc.) no longer consume the next token (so `bp --headless url` keeps url separate).
+
+RE-VERIFICATION (objective, all PASS): the full separate-process acceptance script still passes
+(auto-spawn, cross-process session reuse, pid stable, --json, console buffer survives across
+processes, unknown-tool exit 2); no fd/GC warning observed on stderr.
+
+JUDGE ONLY THE FIX: Is the fd leak fully closed and is closing the parent handle after spawn safe
+(child keeps its dup)? Are the three hardening changes correct with no new regression (e.g. does
+failAll-on-malformed-line over-react; does the try/catch double-settle the promise)?
+
+FIX DIFF (src/daemon/client.ts + src/cli/index.ts) FOLLOWS:
+---8<---
+diff --git a/src/cli/index.ts b/src/cli/index.ts
+index c69e68e..529f9e3 100644
+--- a/src/cli/index.ts
++++ b/src/cli/index.ts
+@@ -34,8 +34,8 @@ function parseArgv(argv: string[]): Parsed {
+     } else if (a.startsWith("--")) {
+       const key = a.slice(2);
+       const next = argv[i + 1];
+-      if (BOOLEAN_FLAGS.has(key) && (next === undefined || next.startsWith("--"))) {
+-        out.args[key] = true;
++      if (BOOLEAN_FLAGS.has(key)) {
++        out.args[key] = true; // boolean flags never consume the next token
+       } else if (next === undefined || next.startsWith("--")) {
+         out.args[key] = true; // bare flag
+       } else {
+diff --git a/src/daemon/client.ts b/src/daemon/client.ts
+index c5b99e9..de84eef 100644
+--- a/src/daemon/client.ts
++++ b/src/daemon/client.ts
+@@ -81,19 +81,16 @@ export class DaemonClient {
+     await fs.mkdir(BASE_DIR, { recursive: true }).catch(() => {});
+     // Redirect the detached daemon's stdout/stderr to the log file so startup crashes
+     // are debuggable (NOT "ignore", which silently discards diagnostics).
+-    let out: number;
+-    try {
+-      out = await new Promise<number>((resolve, reject) =>
+-        fs.open(LOG_PATH, "a").then((fh) => resolve(fh.fd), reject),
+-      );
+-    } catch {
+-      out = 1; // fall back to inherit if the log can't be opened
+-    }
++    const fh = await fs.open(LOG_PATH, "a").catch(() => null);
++    const out: number | "ignore" = fh ? fh.fd : "ignore";
+     const child = spawn(process.execPath, [DAEMON_ENTRY], {
+       detached: true,
+       stdio: ["ignore", out, out],
+     });
+     child.unref();
++    // The child has dup'd the fd at spawn time; close our handle so we don't leak it
++    // (avoids Node's GC "Closing file descriptor" warning on this short-lived process).
++    await fh?.close().catch(() => {});
+   }
+ 
+   private attachHandlers(socket: net.Socket): void {
+@@ -111,7 +108,11 @@ export class DaemonClient {
+         try {
+           res = JSON.parse(line) as DaemonResponse;
+         } catch {
+-          continue; // ignore unparseable line
++          // A non-JSON line is a protocol violation by the daemon — fail outstanding
++          // requests rather than letting them hang forever (default timeout is off).
++          this.failAll(new Error("malformed response line from daemon"));
++          socket.destroy();
++          return;
+         }
+         if (typeof res.id === "number") {
+           const p = this.pending.get(res.id);
+@@ -153,7 +154,13 @@ export class DaemonClient {
+         }, this.requestTimeoutMs);
+       }
+       this.pending.set(id, entry);
+-      this.socket!.write(encodeMessage(req));
++      try {
++        this.socket!.write(encodeMessage(req));
++      } catch (e) {
++        if (entry.timer) clearTimeout(entry.timer);
++        this.pending.delete(id);
++        reject(e instanceof Error ? e : new Error(String(e)));
++      }
+     });
+   }
+ 
+---8<--- end diff ---8<---
+
+RETURN (exactly 4 lines):
+1) Verdict: BLOCK | PASS | PASS_WITH_FOLLOWUPS
+2) Blocking findings (or "none")
+3) Non-blocking follow-ups (or "none")
+4) Confidence (low/med/high) + (agy only) your underlying model name
