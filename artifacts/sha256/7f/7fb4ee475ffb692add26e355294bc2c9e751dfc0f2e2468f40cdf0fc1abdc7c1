@@ -1,0 +1,209 @@
+diff --git a/package.json b/package.json
+index 824ec46..3a22274 100644
+--- a/package.json
++++ b/package.json
+@@ -1,12 +1,13 @@
+ {
+   "name": "browserplex",
+-  "version": "0.3.0",
+-  "description": "MCP server for managing multiple named browser sessions with Playwright",
++  "version": "0.4.0",
++  "description": "MCP server + bp CLI for managing multiple named browser sessions with Playwright",
+   "type": "module",
+   "main": "dist/mcp/server.js",
+   "types": "dist/mcp/server.d.ts",
+   "bin": {
+-    "browserplex": "./dist/mcp/server.js"
++    "browserplex": "./dist/mcp/server.js",
++    "bp": "./dist/cli/index.js"
+   },
+   "files": [
+     "dist",
+diff --git a/src/__tests__/cli-e2e.test.ts b/src/__tests__/cli-e2e.test.ts
+index b0f166b..e6865fc 100644
+--- a/src/__tests__/cli-e2e.test.ts
++++ b/src/__tests__/cli-e2e.test.ts
+@@ -20,25 +20,53 @@ function bp(args: string[], input?: string): Promise<{ code: number; out: string
+   });
+ }
+ 
+-describe('bp CLI e2e (separate processes, isolated daemon dir)', () => {
+-  beforeAll(async () => {
+-    dir = await fs.mkdtemp(path.join(os.tmpdir(), 'bp-cli-'));
+-    // idle disabled so the daemon persists across the separate-process commands in this suite
+-    env = { ...process.env, BROWSERPLEX_DIR: dir, BROWSERPLEX_IDLE_MS: '0' };
++// File-level isolation so EVERY bp invocation (incl. the parsing tests, one of which auto-spawns a
++// daemon) uses a unique temp BROWSERPLEX_DIR — never the real ~/.browserplex.
++beforeAll(async () => {
++  dir = await fs.mkdtemp(path.join(os.tmpdir(), 'bp-cli-'));
++  env = { ...process.env, BROWSERPLEX_DIR: dir, BROWSERPLEX_IDLE_MS: '0' };
++});
++afterAll(async () => {
++  await bp(['daemon', 'stop']).catch(() => {});
++  try {
++    const pid = parseInt(await fs.readFile(path.join(dir, 'daemon.pid'), 'utf8'), 10);
++    process.kill(pid, 'SIGTERM');
++  } catch {
++    /* gone */
++  }
++  await sleep(300);
++  await fs.rm(dir, { recursive: true, force: true });
++});
++
++describe('bp CLI parsing/help', () => {
++  it('top-level --help lists commands', async () => {
++    const r = await bp(['--help']);
++    expect(r.code).toBe(0);
++    expect(r.out).toMatch(/session create/);
++    expect(r.out).toMatch(/serve/);
+   });
+-  afterAll(async () => {
+-    await bp(['daemon', 'stop']).catch(() => {});
+-    // belt-and-suspenders: kill the daemon by pid if still around
+-    try {
+-      const pid = parseInt(await fs.readFile(path.join(dir, 'daemon.pid'), 'utf8'), 10);
+-      process.kill(pid, 'SIGTERM');
+-    } catch {
+-      /* gone */
+-    }
+-    await sleep(300);
+-    await fs.rm(dir, { recursive: true, force: true });
++
++  it('per-command --help is preserved (value-slot-aware)', async () => {
++    const r = await bp(['navigate', '--help']);
++    expect(r.code).toBe(0);
++    expect(r.out).toMatch(/Usage: bp navigate <url>/);
+   });
+ 
++  it('a -h after -- is a value, NOT help', async () => {
++    // `eval -- -h` => script is the literal "-h"; with no session it errors, NOT help.
++    const r = await bp(['eval', '--', '-h']);
++    expect(r.out).not.toMatch(/Usage:/);
++    expect(r.err).not.toMatch(/Usage:/);
++  });
++
++  it('--field and --fields-json together is an error', async () => {
++    const r = await bp(['fill', '--field', 'a=b', '--fields-json', '[]']);
++    expect(r.code).toBe(2);
++    expect(r.err).toMatch(/either --field or --fields-json/);
++  });
++});
++
++describe('bp CLI e2e (separate processes, isolated daemon dir)', () => {
+   it('auto-spawns the daemon and reuses a live session across separate processes', async () => {
+     const create = await bp(['session', 'create', 'app', '-b', 'chromium', '--headless']);
+     expect(create.code).toBe(0);
+diff --git a/src/cli/commands.ts b/src/cli/commands.ts
+index aba3972..c5d8844 100644
+--- a/src/cli/commands.ts
++++ b/src/cli/commands.ts
+@@ -259,6 +259,7 @@ export interface Parsed {
+   spec: CommandSpec;
+   args: Record<string, unknown>;
+   json: boolean;
++  help: boolean;
+ }
+ 
+ export class CliError extends Error {
+@@ -304,6 +305,7 @@ export function parseCommand(argv: string[]): Parsed {
+   const positionals: string[] = [];
+   const flags: Record<string, unknown> = {};
+   let json = false;
++  let help = false;
+   let endOfOpts = false;
+ 
+   for (let i = 0; i < rest.length; i++) {
+@@ -316,6 +318,13 @@ export function parseCommand(argv: string[]): Parsed {
+       json = true;
+       continue;
+     }
++    // Help is value-slot-aware: only a -h/--help reached in flag position (before `--`, and not
++    // consumed as a flag's value via the rest[++i] below) counts. A -h after `--` or as a flag's
++    // value is NOT help.
++    if (!endOfOpts && (t === "-h" || t === "--help")) {
++      help = true;
++      continue;
++    }
+     if (!endOfOpts && isFlag(t)) {
+       const match = flagDefFor(spec, t);
+       if (!match) throw new CliError(`Unknown flag: ${t}\n\n${usageFor(spec)}`);
+@@ -337,8 +346,12 @@ export function parseCommand(argv: string[]): Parsed {
+     }
+   }
+ 
++  // Short-circuit on help BEFORE buildArgs, so `bp eval --help` etc. don't trigger stdin reads or
++  // required-positional/validation errors.
++  if (help) return { spec, args: {}, json, help: true };
++
+   const args = buildArgs(spec, positionals, flags);
+-  return { spec, args, json };
++  return { spec, args, json, help: false };
+ }
+ 
+ /** Map positionals + raw flags into the action-arg object, applying per-command transforms. */
+@@ -372,6 +385,10 @@ function buildArgs(spec: CommandSpec, positionals: string[], flags: Record<strin
+     args.env = obj;
+   }
+ 
++  // --field and --fields-json are mutually exclusive (otherwise fields-json would silently win).
++  if (Array.isArray(args.field) && typeof args.fields === "string") {
++    throw new CliError("use either --field or --fields-json, not both");
++  }
+   // --field selector=value (repeatable) -> fields[] (split on FIRST '=', selectors may contain '=')
+   if (Array.isArray(args.field)) {
+     args.fields = (args.field as string[]).map((kv) => {
+diff --git a/src/cli/index.ts b/src/cli/index.ts
+index f38f621..92055c2 100644
+--- a/src/cli/index.ts
++++ b/src/cli/index.ts
+@@ -1,6 +1,6 @@
+ #!/usr/bin/env node
+ import { DaemonClient } from "../daemon/client.js";
+-import { COMMANDS, parseCommand, render, topUsage, usageFor, CliError } from "./commands.js";
++import { parseCommand, render, topUsage, usageFor, CliError } from "./commands.js";
+ import { serve, status, stop } from "./meta.js";
+ 
+ /**
+@@ -22,14 +22,8 @@ async function main(): Promise<number> {
+   if (argv[0] === "daemon" && argv[1] === "status") return status();
+   if (argv[0] === "daemon" && argv[1] === "stop") return stop();
+ 
+-  // Per-command help: `bp <command...> --help`.
+-  if (argv.includes("-h") || argv.includes("--help")) {
+-    const spec = COMMANDS.find((s) => s.path.every((p, i) => argv[i] === p));
+-    // eslint-disable-next-line no-console
+-    console.log(spec ? usageFor(spec) : topUsage());
+-    return 0;
+-  }
+-
++  // Command parsing handles per-command help in a value-slot-aware way (a -h/--help in flag
++  // position sets parsed.help); a -h after `--` or as a flag value is NOT help.
+   let parsed;
+   try {
+     parsed = parseCommand(argv);
+@@ -41,6 +35,12 @@ async function main(): Promise<number> {
+     throw e;
+   }
+ 
++  if (parsed.help) {
++    // eslint-disable-next-line no-console
++    console.log(usageFor(parsed.spec));
++    return 0;
++  }
++
+   const client = new DaemonClient();
+   try {
+     await client.connect();
+diff --git a/src/mcp/server.ts b/src/mcp/server.ts
+index 236b6e2..be743cf 100644
+--- a/src/mcp/server.ts
++++ b/src/mcp/server.ts
+@@ -8,7 +8,7 @@ import type { ActionResult } from "../core/types.js";
+ 
+ const server = new McpServer({
+   name: "browserplex",
+-  version: "0.3.0",
++  version: "0.4.0",
+ });
+ 
+ type McpContent =
