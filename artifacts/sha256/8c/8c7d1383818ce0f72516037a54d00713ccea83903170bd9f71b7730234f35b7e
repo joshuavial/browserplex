@@ -1,0 +1,183 @@
+ROLE: RE-REVIEW of a fix for a FINAL REVIEW BLOCK on browserplex bead browserplex-2mv (P0, electron
+session type). Round-1 final review: agy PASS, Opus PASS_WITH_FOLLOWUPS, Codex **BLOCK**.
+
+PHASE: review (re-review of the changed part)
+DECISION STANDARD: BLOCK | PASS | PASS_WITH_FOLLOWUPS.
+
+THE BLOCK (Codex, verified CORRECT against Playwright source electron.js:142-175): without
+`executablePath`, Playwright resolves Electron via `require("electron/index.js")` from ITS OWN
+install (browserplex's node_modules), NOT from `cwd` — `cwd` is only the spawn working dir. So the
+plan's premise "drives the target app's electron via cwd, no runtime dep" was false; and since
+`electron` is a devDependency, a production `npm i browserplex` would have no electron at all.
+
+THE FIX (diff below):
+1. Added `executablePath` to ElectronLaunchOptions, actions.sessionCreate, and the session_create
+   MCP schema — this selects WHICH electron binary launches (point at the app's
+   node_modules/.bin/electron). `cwd` re-documented as spawn working dir only.
+2. README corrected: explicit note that browserplex ships electron only as a DEV dependency and users
+   must set `executablePath` to their app's electron; the example now sets executablePath.
+3. New test `honors an explicit executablePath` launches via `executablePath = require('electron')`,
+   proving the param is plumbed to _electron.launch (answers Codex's "fixture masks it").
+4. (Already folded, also an Opus follow-up) the post-launch path is wrapped in try/catch calling
+   `app.close()` if firstWindow()/context() throws — no orphaned Electron on partial launch.
+
+RE-VERIFICATION: build clean; electron tests 2/2 (default path + explicit executablePath); full
+suite 70/70.
+
+JUDGE ONLY THE FIX: Does adding executablePath correctly address the binary-resolution gap? Is the
+documentation now accurate (executablePath selects the binary; cwd is working dir; electron is
+dev-only)? Does the executablePath test meaningfully prove the plumbing? Is the try/catch leak guard
+correct? Any new regression?
+
+FIX DIFF (src + README) FOLLOWS:
+---8<---
+diff --git a/README.md b/README.md
+index 2f0b232..9700a76 100644
+--- a/README.md
++++ b/README.md
+@@ -60,7 +60,9 @@ Because `browser_evaluate` runs **in the renderer**, the app's preload bridge is
+ and assert the full app, not just the static shell.
+ 
+ ```
+-session_create name="app" type="electron" electronArgs=["/path/to/your/app"] env={"MY_TEST_MODE":"1"}
++session_create name="app" type="electron" \
++  executablePath="/path/to/your-app/node_modules/.bin/electron" \
++  electronArgs=["/path/to/your-app"] cwd="/path/to/your-app" env={"MY_TEST_MODE":"1"}
+ browser_evaluate session="app" script="window.myPreloadBridge !== undefined"
+ ```
+ 
+@@ -68,10 +70,15 @@ Electron-only `session_create` params:
+ 
+ | Param | Description |
+ |-------|-------------|
++| `executablePath` | **Path to the Electron binary to launch** — this selects *which* Electron runs. Point it at your app's `node_modules/.bin/electron`. If omitted, Playwright falls back to `require('electron')` resolved from browserplex's own install (a dev-only dependency), so set this when driving your own app. |
+ | `electronArgs` | Args passed to the Electron launch (default `["."]`) — typically the target app path |
+-| `cwd` | Working directory; the Electron binary is resolved from its `node_modules` |
++| `cwd` | Spawn working directory (does **not** select the Electron binary — that's `executablePath`) |
+ | `env` | Extra environment for the launched app (e.g. enabling a test-mode hook) |
+ 
++> **Electron binary:** browserplex does not ship Electron as a runtime dependency (it's a
++> devDependency used only for browserplex's own tests). To drive your app, set `executablePath` to
++> that app's Electron binary so the launched runtime matches the app's Electron version.
++
+ Caveats:
+ - Not headless — a real window opens. On Linux CI, run under a virtual display (xvfb). The `headless`
+   flag is ignored for `electron`.
+diff --git a/src/__tests__/electron.test.ts b/src/__tests__/electron.test.ts
+index 0165914..79034dd 100644
+--- a/src/__tests__/electron.test.ts
++++ b/src/__tests__/electron.test.ts
+@@ -48,4 +48,23 @@ maybe('electron session type', () => {
+     await sessionManager.destroy(NAME);
+     expect(sessionManager.get(NAME)).toBeUndefined();
+   }, 60_000);
++
++  it('honors an explicit executablePath (binary selection is plumbed, not ignored)', async () => {
++    // require('electron') in a non-electron context returns the binary path. Passing it as
++    // executablePath proves the param flows through to _electron.launch and selects the binary
++    // (the real mechanism for driving an external app's own Electron).
++    const electronBinary = require('electron') as string;
++    expect(typeof electronBinary).toBe('string');
++    const NAME2 = 'electron-exec-path-test';
++    await sessionCreate({
++      name: NAME2,
++      type: 'electron',
++      electronArgs: [fixtureDir],
++      executablePath: electronBinary,
++    });
++    const evalRes = await browserEvaluate({ session: NAME2, script: 'window.__bpTest' });
++    expect(evalRes.data).toBe('electron-ok');
++    await sessionManager.destroy(NAME2);
++    expect(sessionManager.get(NAME2)).toBeUndefined();
++  }, 60_000);
+ });
+diff --git a/src/core/actions.ts b/src/core/actions.ts
+index ac16c63..7f3ae66 100644
+--- a/src/core/actions.ts
++++ b/src/core/actions.ts
+@@ -25,6 +25,7 @@ export async function sessionCreate(args: {
+   headless?: boolean;
+   // electron-only launch options (ignored for other types)
+   electronArgs?: string[];
++  executablePath?: string;
+   cwd?: string;
+   env?: Record<string, string>;
+ }): Promise<ActionResult> {
+@@ -33,7 +34,7 @@ export async function sessionCreate(args: {
+   const useHeadless = args.headless ?? (browserType === "chromium");
+   const launch =
+     browserType === "electron"
+-      ? { args: args.electronArgs, cwd: args.cwd, env: args.env }
++      ? { args: args.electronArgs, executablePath: args.executablePath, cwd: args.cwd, env: args.env }
+       : undefined;
+   await sessionManager.create(args.name, browserType, useHeadless, launch);
+   return { text: `Created ${browserType} session '${args.name}'${useHeadless ? "" : " (headed)"}` };
+diff --git a/src/core/sessions.ts b/src/core/sessions.ts
+index 245898c..31b2fa8 100644
+--- a/src/core/sessions.ts
++++ b/src/core/sessions.ts
+@@ -27,12 +27,20 @@ class SessionManager {
+       // apply to an Electron launch and are ignored.
+       const app = await _electron.launch({
+         args: launch?.args ?? ['.'],
++        executablePath: launch?.executablePath,
+         cwd: launch?.cwd,
+         env: launch?.env ? { ...process.env, ...launch.env } as Record<string, string> : undefined,
+       });
+-      page = await app.firstWindow();
+-      context = app.context();
+-      browser = app;
++      try {
++        // If firstWindow()/context() throws, the app is launched but never stored in the
++        // session map — close it here so the Electron process isn't orphaned.
++        page = await app.firstWindow();
++        context = app.context();
++        browser = app;
++      } catch (e) {
++        await app.close().catch(() => {});
++        throw e;
++      }
+     } else if (type === 'chromium') {
+       browser = await chromium.launch({ headless });
+       context = await browser.newContext(contextOptions);
+diff --git a/src/core/types.ts b/src/core/types.ts
+index fade47e..b79c2a7 100644
+--- a/src/core/types.ts
++++ b/src/core/types.ts
+@@ -6,7 +6,14 @@ export type BrowserType = 'chromium' | 'firefox' | 'webkit' | 'camoufox' | 'elec
+ export interface ElectronLaunchOptions {
+   /** Args passed to electron (default ['.']). Typically the path to the target app. */
+   args?: string[];
+-  /** Working directory — electron binary is resolved from its node_modules. */
++  /**
++   * Path to the Electron binary to launch. This is what selects WHICH Electron is used
++   * (e.g. the target app's own `node_modules/.bin/electron`). When omitted, Playwright
++   * falls back to `require('electron')` resolved from browserplex's install — which is a
++   * dev-only devDependency, so production users driving their own app should set this.
++   */
++  executablePath?: string;
++  /** Spawn working directory (NOT used to resolve the Electron binary — that's executablePath). */
+   cwd?: string;
+   /** Extra environment for the launched app (e.g. test-mode hooks). */
+   env?: Record<string, string>;
+diff --git a/src/mcp/server.ts b/src/mcp/server.ts
+index 0f5c445..236b6e2 100644
+--- a/src/mcp/server.ts
++++ b/src/mcp/server.ts
+@@ -55,7 +55,8 @@ server.tool(
+     type: z.enum(["chromium", "firefox", "webkit", "camoufox", "electron"]).default("chromium").describe("Browser type: chromium (default), firefox, webkit (Safari), camoufox (stealth Firefox), or electron (drive an Electron app)"),
+     headless: z.boolean().optional().describe("Run headless (default: true for chromium, false for camoufox; ignored for electron, which always opens a real window)"),
+     electronArgs: z.array(z.string()).optional().describe("electron only: args passed to the Electron launch (default ['.']), e.g. the path to the target app"),
+-    cwd: z.string().optional().describe("electron only: working directory (the Electron binary is resolved from its node_modules)"),
++    executablePath: z.string().optional().describe("electron only: path to the Electron binary to launch (e.g. the target app's node_modules/.bin/electron). Selects WHICH Electron runs; if omitted, falls back to browserplex's dev-only bundled electron"),
++    cwd: z.string().optional().describe("electron only: spawn working directory (does NOT select the Electron binary — use executablePath for that)"),
+     env: z.record(z.string()).optional().describe("electron only: extra environment variables for the launched app (e.g. test-mode hooks)"),
+   },
+   async (args) => wrap(() => actions.sessionCreate(args)),
+---8<--- end diff ---8<---
+
+RETURN (exactly 4 lines):
+1) Verdict: BLOCK | PASS | PASS_WITH_FOLLOWUPS
+2) Blocking findings (or "none")
+3) Non-blocking follow-ups (or "none")
+4) Confidence (low/med/high) + (agy only) your underlying model name
