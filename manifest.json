@@ -188,6 +188,52 @@
         "degraded_reason": "Level 1 test bead (agy+Opus). Both PASS."
       },
       "timestamp": "2026-05-29T21:36:35Z"
+    },
+    {
+      "gate_id": "7p0.6-review",
+      "phase": "review",
+      "round": 1,
+      "tier": 1,
+      "status": "pass",
+      "reviewed_stages": [
+        {
+          "stage": "review",
+          "role": "review",
+          "artifact": "d01af734cfb8cd6756ed7ac88f9f2b1c2a15a503e92a5efb1b0fdc6119831a97"
+        }
+      ],
+      "seats": [
+        {
+          "seat": "agy",
+          "harness": {
+            "name": "agy",
+            "version": "0"
+          },
+          "provider": {
+            "name": "google",
+            "model": "gemini-3.1-pro"
+          },
+          "verdict": "go",
+          "timestamp": "2026-05-29T21:42:18Z"
+        },
+        {
+          "seat": "claude-opus",
+          "harness": {
+            "name": "claude-opus",
+            "version": "0"
+          },
+          "provider": {
+            "name": "anthropic",
+            "model": "claude-opus-4-8"
+          },
+          "verdict": "go",
+          "timestamp": "2026-05-29T21:42:18Z"
+        }
+      ],
+      "decision": {
+        "degraded_reason": "Level 1 test bead (agy+Opus). Both PASS; unused import nit fixed."
+      },
+      "timestamp": "2026-05-29T21:42:18Z"
     }
   ]
 }
