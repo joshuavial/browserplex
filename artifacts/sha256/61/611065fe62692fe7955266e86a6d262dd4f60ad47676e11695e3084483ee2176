@@ -1,0 +1,311 @@
+diff --git a/README.md b/README.md
+index 9b32937..2f0b232 100644
+--- a/README.md
++++ b/README.md
+@@ -49,6 +49,35 @@ npm run build
+ | `firefox` | Firefox | Standard Firefox browser |
+ | `webkit` | Safari | Test Safari rendering, iOS compatibility |
+ | `camoufox` | Firefox | Stealth browsing, anti-detection |
++| `electron` | Electron | Drive an Electron desktop app (renderer + preload bridge) |
++
++### Driving Electron apps
++
++`session_create type="electron"` launches an Electron application via Playwright and attaches to its
++first window — which is an ordinary Playwright `Page`, so every action (`browser_snapshot`,
++`browser_click`, `browser_evaluate`, `browser_take_screenshot`, console/network, …) works unchanged.
++Because `browser_evaluate` runs **in the renderer**, the app's preload bridge is live — you can drive
++and assert the full app, not just the static shell.
++
++```
++session_create name="app" type="electron" electronArgs=["/path/to/your/app"] env={"MY_TEST_MODE":"1"}
++browser_evaluate session="app" script="window.myPreloadBridge !== undefined"
++```
++
++Electron-only `session_create` params:
++
++| Param | Description |
++|-------|-------------|
++| `electronArgs` | Args passed to the Electron launch (default `["."]`) — typically the target app path |
++| `cwd` | Working directory; the Electron binary is resolved from its `node_modules` |
++| `env` | Extra environment for the launched app (e.g. enabling a test-mode hook) |
++
++Caveats:
++- Not headless — a real window opens. On Linux CI, run under a virtual display (xvfb). The `headless`
++  flag is ignored for `electron`.
++- Native OS file dialogs can't be driven by Playwright; apps should expose test hooks (use `env`).
++- `browser_navigate` is a no-op (the app loads its own URL); stored storage state does not apply;
++  `browser_tabs` maps to the app's windows.
+ 
+ ## Tools
+ 
+diff --git a/package.json b/package.json
+index 5553afd..824ec46 100644
+--- a/package.json
++++ b/package.json
+@@ -54,6 +54,7 @@
+   },
+   "devDependencies": {
+     "@types/node": "^22.0.0",
++    "electron": "^42.3.0",
+     "typescript": "^5.8.0",
+     "vitest": "^3.0.0"
+   }
+diff --git a/src/__tests__/electron.test.ts b/src/__tests__/electron.test.ts
+new file mode 100644
+index 0000000..0165914
+--- /dev/null
++++ b/src/__tests__/electron.test.ts
+@@ -0,0 +1,51 @@
++import { describe, it, expect, afterAll } from 'vitest';
++import { createRequire } from 'node:module';
++import { fileURLToPath } from 'node:url';
++import * as path from 'node:path';
++import { sessionManager } from '../core/sessions.js';
++import { sessionCreate, browserEvaluate, browserSnapshot } from '../core/actions.js';
++
++const require = createRequire(import.meta.url);
++const __dirname = path.dirname(fileURLToPath(import.meta.url));
++const fixtureDir = path.join(__dirname, 'fixtures', 'electron-app');
++
++// _electron.launch opens a REAL window (not headless). Run only where Electron is
++// installed AND a display is available (macOS/Windows always; Linux needs xvfb -> DISPLAY).
++function canRunElectron(): boolean {
++  try {
++    require.resolve('electron');
++  } catch {
++    return false;
++  }
++  if (process.platform === 'linux' && !process.env.DISPLAY) return false;
++  return true;
++}
++
++const maybe = canRunElectron() ? describe : describe.skip;
++
++maybe('electron session type', () => {
++  const NAME = 'electron-fixture-test';
++
++  afterAll(async () => {
++    await sessionManager.destroy(NAME).catch(() => {});
++  });
++
++  it('launches a fixture Electron app and drives the renderer', async () => {
++    // Go through the sessionCreate ACTION (the path the MCP server + daemon use): this
++    // exercises the electronArgs -> launch.args threading, not just sessionManager.
++    const created = await sessionCreate({ name: NAME, type: 'electron', electronArgs: [fixtureDir] });
++    expect(created.text).toContain("Created electron session");
++
++    // browser_evaluate runs IN THE RENDERER: the window marker is live.
++    const evalRes = await browserEvaluate({ session: NAME, script: 'window.__bpTest' });
++    expect(evalRes.data).toBe('electron-ok');
++
++    // existing snapshot action works unchanged on the Electron window
++    const snap = await browserSnapshot({ session: NAME, interactive: false });
++    expect(snap.text).toContain('Electron Fixture Ready');
++
++    // clean teardown via app.close() (the electron branch in destroy())
++    await sessionManager.destroy(NAME);
++    expect(sessionManager.get(NAME)).toBeUndefined();
++  }, 60_000);
++});
+diff --git a/src/__tests__/fixtures/electron-app/index.html b/src/__tests__/fixtures/electron-app/index.html
+new file mode 100644
+index 0000000..b043082
+--- /dev/null
++++ b/src/__tests__/fixtures/electron-app/index.html
+@@ -0,0 +1,16 @@
++<!doctype html>
++<html lang="en">
++  <head>
++    <meta charset="utf-8" />
++    <title>BP Electron Fixture</title>
++  </head>
++  <body>
++    <h1 id="heading">Electron Fixture Ready</h1>
++    <button id="go">Go</button>
++    <script>
++      // Marker the test asserts via browser_evaluate, proving the renderer (and any
++      // preload bridge in a real app) is live — not just a static shell.
++      window.__bpTest = 'electron-ok';
++    </script>
++  </body>
++</html>
+diff --git a/src/__tests__/fixtures/electron-app/main.js b/src/__tests__/fixtures/electron-app/main.js
+new file mode 100644
+index 0000000..d44f837
+--- /dev/null
++++ b/src/__tests__/fixtures/electron-app/main.js
+@@ -0,0 +1,16 @@
++// Minimal Electron main process for the browserplex electron-session test fixture.
++const { app, BrowserWindow } = require('electron');
++const path = require('path');
++
++function createWindow() {
++  const win = new BrowserWindow({
++    width: 400,
++    height: 300,
++    show: true,
++    webPreferences: { contextIsolation: true },
++  });
++  win.loadFile(path.join(__dirname, 'index.html'));
++}
++
++app.whenReady().then(createWindow);
++app.on('window-all-closed', () => app.quit());
+diff --git a/src/__tests__/fixtures/electron-app/package.json b/src/__tests__/fixtures/electron-app/package.json
+new file mode 100644
+index 0000000..ad45081
+--- /dev/null
++++ b/src/__tests__/fixtures/electron-app/package.json
+@@ -0,0 +1,6 @@
++{
++  "name": "bp-electron-fixture",
++  "version": "1.0.0",
++  "main": "main.js",
++  "private": true
++}
+diff --git a/src/core/actions.ts b/src/core/actions.ts
+index d0bcbcf..ac16c63 100644
+--- a/src/core/actions.ts
++++ b/src/core/actions.ts
+@@ -23,11 +23,19 @@ export async function sessionCreate(args: {
+   name: string;
+   type?: BrowserType;
+   headless?: boolean;
++  // electron-only launch options (ignored for other types)
++  electronArgs?: string[];
++  cwd?: string;
++  env?: Record<string, string>;
+ }): Promise<ActionResult> {
+   const browserType = args.type ?? "chromium";
+-  // Default: chromium headless, camoufox headed (for manual interaction)
++  // Default: chromium headless, camoufox/electron headed (for manual interaction)
+   const useHeadless = args.headless ?? (browserType === "chromium");
+-  await sessionManager.create(args.name, browserType, useHeadless);
++  const launch =
++    browserType === "electron"
++      ? { args: args.electronArgs, cwd: args.cwd, env: args.env }
++      : undefined;
++  await sessionManager.create(args.name, browserType, useHeadless, launch);
+   return { text: `Created ${browserType} session '${args.name}'${useHeadless ? "" : " (headed)"}` };
+ }
+ 
+diff --git a/src/core/sessions.ts b/src/core/sessions.ts
+index a3bcb6c..245898c 100644
+--- a/src/core/sessions.ts
++++ b/src/core/sessions.ts
+@@ -1,19 +1,19 @@
+-import { chromium, firefox, webkit, type Browser, type BrowserContext, type Page } from 'playwright';
+-import type { BrowserSession, BrowserType, SessionInfo, ConsoleMessage, NetworkRequest } from './types.js';
++import { chromium, firefox, webkit, _electron, type Browser, type BrowserContext, type Page, type ElectronApplication } from 'playwright';
++import type { BrowserSession, BrowserType, SessionInfo, ConsoleMessage, NetworkRequest, ElectronLaunchOptions } from './types.js';
+ 
+ class SessionManager {
+   private sessions: Map<string, BrowserSession> = new Map();
+ 
+-  async create(name: string, type: BrowserType = 'chromium', headless: boolean = true): Promise<BrowserSession> {
+-    return this.createWithStorage(name, type, headless, undefined);
++  async create(name: string, type: BrowserType = 'chromium', headless: boolean = true, launch?: ElectronLaunchOptions): Promise<BrowserSession> {
++    return this.createWithStorage(name, type, headless, undefined, launch);
+   }
+ 
+-  async createWithStorage(name: string, type: BrowserType = 'chromium', headless: boolean = true, storageState?: object): Promise<BrowserSession> {
++  async createWithStorage(name: string, type: BrowserType = 'chromium', headless: boolean = true, storageState?: object, launch?: ElectronLaunchOptions): Promise<BrowserSession> {
+     if (this.sessions.has(name)) {
+       throw new Error(`Session '${name}' already exists`);
+     }
+ 
+-    let browser: Browser | BrowserContext;
++    let browser: Browser | BrowserContext | ElectronApplication;
+     let context: BrowserContext;
+     let page: Page;
+ 
+@@ -21,7 +21,19 @@ class SessionManager {
+     // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     const contextOptions = storageState ? { storageState: storageState as any } : {};
+ 
+-    if (type === 'chromium') {
++    if (type === 'electron') {
++      // Drive an Electron app. The window from firstWindow() is a normal Playwright Page,
++      // so every page-centric action works unchanged. headless and storageState do not
++      // apply to an Electron launch and are ignored.
++      const app = await _electron.launch({
++        args: launch?.args ?? ['.'],
++        cwd: launch?.cwd,
++        env: launch?.env ? { ...process.env, ...launch.env } as Record<string, string> : undefined,
++      });
++      page = await app.firstWindow();
++      context = app.context();
++      browser = app;
++    } else if (type === 'chromium') {
+       browser = await chromium.launch({ headless });
+       context = await browser.newContext(contextOptions);
+       page = await context.newPage();
+@@ -115,9 +127,15 @@ class SessionManager {
+ 
+     this.sessions.delete(name);
+     try {
+-      await session.context.close();
+-      if ('close' in session.browser) {
+-        await (session.browser as Browser).close();
++      if (session.type === 'electron') {
++        // Closing the ElectronApplication tears down its context+window; calling
++        // context.close() on an Electron context is redundant/erroneous, so skip it.
++        await (session.browser as ElectronApplication).close();
++      } else {
++        await session.context.close();
++        if ('close' in session.browser) {
++          await (session.browser as Browser).close();
++        }
+       }
+     } catch {
+       // Browser may already be closed
+diff --git a/src/core/types.ts b/src/core/types.ts
+index 247e1a5..fade47e 100644
+--- a/src/core/types.ts
++++ b/src/core/types.ts
+@@ -1,6 +1,16 @@
+-import type { Browser, BrowserContext, Page } from 'playwright';
++import type { Browser, BrowserContext, Page, ElectronApplication } from 'playwright';
+ 
+-export type BrowserType = 'chromium' | 'firefox' | 'webkit' | 'camoufox';
++export type BrowserType = 'chromium' | 'firefox' | 'webkit' | 'camoufox' | 'electron';
++
++/** Launch options used only when type === 'electron'. */
++export interface ElectronLaunchOptions {
++  /** Args passed to electron (default ['.']). Typically the path to the target app. */
++  args?: string[];
++  /** Working directory — electron binary is resolved from its node_modules. */
++  cwd?: string;
++  /** Extra environment for the launched app (e.g. test-mode hooks). */
++  env?: Record<string, string>;
++}
+ 
+ export interface ConsoleMessage {
+   type: string;
+@@ -31,7 +41,7 @@ export interface RefMap {
+ export interface BrowserSession {
+   name: string;
+   type: BrowserType;
+-  browser: Browser | BrowserContext;
++  browser: Browser | BrowserContext | ElectronApplication;
+   context: BrowserContext;
+   page: Page;
+   createdAt: Date;
+diff --git a/src/mcp/server.ts b/src/mcp/server.ts
+index 070a0be..0f5c445 100644
+--- a/src/mcp/server.ts
++++ b/src/mcp/server.ts
+@@ -52,8 +52,11 @@ server.tool(
+   "Create a new named browser session",
+   {
+     name: z.string().describe("Unique name for this browser session"),
+-    type: z.enum(["chromium", "firefox", "webkit", "camoufox"]).default("chromium").describe("Browser type: chromium (default), firefox, webkit (Safari), or camoufox (stealth Firefox)"),
+-    headless: z.boolean().optional().describe("Run headless (default: true for chromium, false for camoufox)"),
++    type: z.enum(["chromium", "firefox", "webkit", "camoufox", "electron"]).default("chromium").describe("Browser type: chromium (default), firefox, webkit (Safari), camoufox (stealth Firefox), or electron (drive an Electron app)"),
++    headless: z.boolean().optional().describe("Run headless (default: true for chromium, false for camoufox; ignored for electron, which always opens a real window)"),
++    electronArgs: z.array(z.string()).optional().describe("electron only: args passed to the Electron launch (default ['.']), e.g. the path to the target app"),
++    cwd: z.string().optional().describe("electron only: working directory (the Electron binary is resolved from its node_modules)"),
++    env: z.record(z.string()).optional().describe("electron only: extra environment variables for the launched app (e.g. test-mode hooks)"),
+   },
+   async (args) => wrap(() => actions.sessionCreate(args)),
+ );
