@@ -201,6 +201,68 @@
         "escalation_reason": "Codex BLOCKed plan v1 (idle in-flight race; unsafe kill(pid); stale-socket TOCTOU). Plan revised: idle=sessions&&inFlight&&openConnections, RPC control instead of signals, bounded probe-unlink-reprobe. All seats PASS round 2."
       },
       "timestamp": "2026-05-29T21:22:38Z"
+    },
+    {
+      "gate_id": "7p0.5-review",
+      "phase": "review",
+      "round": 1,
+      "tier": 2,
+      "status": "pass",
+      "reviewed_stages": [
+        {
+          "stage": "review",
+          "role": "review",
+          "artifact": "5ad242fed213fcdc27db5766ecef3eaf593329cba91eb75bdc1c259390e151d2"
+        }
+      ],
+      "seats": [
+        {
+          "seat": "agy",
+          "harness": {
+            "name": "agy",
+            "version": "0"
+          },
+          "provider": {
+            "name": "google",
+            "model": "gemini-3.1-pro"
+          },
+          "verdict": "go",
+          "timestamp": "2026-05-29T21:32:30Z"
+        },
+        {
+          "seat": "claude-opus",
+          "harness": {
+            "name": "claude-opus",
+            "version": "0"
+          },
+          "provider": {
+            "name": "anthropic",
+            "model": "claude-opus-4-8"
+          },
+          "verdict": "go",
+          "timestamp": "2026-05-29T21:32:30Z"
+        },
+        {
+          "seat": "codex",
+          "harness": {
+            "name": "codex",
+            "version": "0"
+          },
+          "provider": {
+            "name": "openai",
+            "model": "gpt-5.5-xhigh"
+          },
+          "verdict": "go",
+          "timestamp": "2026-05-29T21:32:30Z"
+        }
+      ],
+      "decision": {
+        "escalation_reason": "All 3 PASS. Codex follow-up (BROWSERPLEX_IDLE_MS=0 not disabling due to Number()||default) fixed + idempotent close-decrement clamp added; verified by contrast test.",
+        "deferred_beads": [
+          "browserplex-7p0.7"
+        ]
+      },
+      "timestamp": "2026-05-29T21:32:30Z"
     }
   ]
 }
