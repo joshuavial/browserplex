@@ -1,5 +1,5 @@
 {
-  "manifest_version": 2,
+  "manifest_version": 3,
   "run_id": "bp-7p0.4",
   "workflow": "manual",
   "workflow_version": "manual-v1",
@@ -32,6 +32,54 @@
         "size": 5274
       },
       "timestamp": "2026-05-29T21:08:58.423895Z"
+    }
+  ],
+  "gates": [
+    {
+      "gate_id": "7p0.4-plan",
+      "phase": "plan",
+      "round": 1,
+      "tier": 1,
+      "status": "pass",
+      "reviewed_stages": [
+        {
+          "stage": "plan",
+          "role": "plan",
+          "artifact": "1cf820ed039aaef48e6bd48c0c157ad18c43bf2402791d7cce933de48400c275"
+        }
+      ],
+      "seats": [
+        {
+          "seat": "agy",
+          "harness": {
+            "name": "agy",
+            "version": "0"
+          },
+          "provider": {
+            "name": "google",
+            "model": "gemini-3.1-pro"
+          },
+          "verdict": "go",
+          "timestamp": "2026-05-29T21:08:58Z"
+        },
+        {
+          "seat": "claude-opus",
+          "harness": {
+            "name": "claude-opus",
+            "version": "0"
+          },
+          "provider": {
+            "name": "anthropic",
+            "model": "claude-opus-4-8"
+          },
+          "verdict": "go",
+          "timestamp": "2026-05-29T21:08:58Z"
+        }
+      ],
+      "decision": {
+        "degraded_reason": "Level 1 (low-risk reversible CLI frontend): agy + Opus seats, no Codex"
+      },
+      "timestamp": "2026-05-29T21:08:58Z"
     }
   ]
 }
