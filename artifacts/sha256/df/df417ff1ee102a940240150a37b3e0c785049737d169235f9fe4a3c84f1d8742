@@ -1,0 +1,38 @@
+# Retro — browserplex bp-cli, beads .1–.3
+
+Subjects: bp-7p0.1 (extract shared core), bp-7p0.2 (daemon + IPC), bp-7p0.3 (CLI client + auto-spawn).
+All three closed. Five Level-2 gate rounds, 3 BLOCKs caught and resolved.
+
+## What worked
+- **Multi-seat external gates earn their cost — not theater.** Real blockers caught: Codex found the
+  oversized-complete-line OOM hole (.2) and a leaked log fd (.3); agy found a `socket.end`
+  write-after-end fragility + `umask` global-state race (.2). Plan gates surfaced acceptance-breakers
+  early (.1: hardcoded `dist/index.js` in tests/start, 7 non-throwing error paths).
+- **Scope discipline held.** Deferring ergonomics/lifecycle/tests/packaging to later beads kept each
+  bead small and reviewable; carried follow-ups were tracked as bead notes (e.g. evaluate-undefined → .4).
+- **No-behaviour-change refactor (.1) had a real test net** (43-test integration booting the real
+  server) — made "byte-identical surface" verifiable, not asserted.
+
+## What cost time / what to change
+1. **Resource/stream lifecycle is the dominant bug class.** Every BLOCK and most follow-ups were
+   write-after-end, leaked fds, leaked timers, or leaked listeners.
+   → PROCESS CHANGE: before submitting IMPLEMENT to a gate, run a self-audit checklist over the diff:
+   every socket/stream end path, every opened fd/FileHandle, every setTimeout, every event listener —
+   confirm each has a cleanup path. Catch these BEFORE the gate, not via it.
+2. **Test-harness artifacts wasted a verify cycle (.2).** A charset-less `data:` URL the *browser*
+   mis-decoded + a naive `bb += chunk` reader in the test produced false UTF-8 failures.
+   → PROCESS CHANGE: verification scripts use the REAL protocol helpers (LineDecoder/encodeMessage),
+   and isolate IPC concerns from browser-charset concerns when testing round-trips.
+3. **Re-reviews can introduce NEW blocks (agy round-1 PASS → round-2 BLOCK on .2).** Budget for
+   multiple gate rounds per non-trivial bead; a fix isn't done until the changed part re-passes ALL
+   required seats, and a fix can draw a fresh finding.
+4. **etude gate-JSON schema needed trial-and-error** (field is `tier` not `level`; gate `status` ∈
+   {pass,rerun,escalated}; seat `verdict` ∈ {go,block,failed,empty,malfunction,disregarded};
+   `reviewed_stages[].artifact` is the content sha256 from `etude run show`; all timestamps required).
+   → PROCESS CHANGE: reuse the known-good gate-JSON template; don't rediscover the schema each bead.
+
+## Feed-forward into .4 (full command surface)
+- Apply the lifecycle self-audit checklist (item 1) to the .4 CLI parsing/IO before gating.
+- Resolve the carried evaluate-undefined-text follow-up when wiring `bp eval` output.
+- Keep verification using real protocol helpers; cover the tools the integration suite doesn't
+  (storage_*, drag, select, upload, fill_form, dialog, evaluate, resize, console, network, tabs).
