@@ -1,5 +1,5 @@
 {
-  "manifest_version": 2,
+  "manifest_version": 3,
   "run_id": "bp-7p0.7",
   "workflow": "manual",
   "workflow_version": "manual-v1",
@@ -32,6 +32,55 @@
         "size": 4979
       },
       "timestamp": "2026-05-29T21:47:32.335088Z"
+    }
+  ],
+  "gates": [
+    {
+      "gate_id": "7p0.7-plan",
+      "phase": "plan",
+      "round": 2,
+      "tier": 1,
+      "status": "pass",
+      "reviewed_stages": [
+        {
+          "stage": "plan",
+          "role": "plan",
+          "artifact": "441b4ff2b88fd4347da183c56a40ee60be4f7642e627d420b6206b719bed8626"
+        }
+      ],
+      "seats": [
+        {
+          "seat": "agy",
+          "harness": {
+            "name": "agy",
+            "version": "0"
+          },
+          "provider": {
+            "name": "google",
+            "model": "gemini-3.1-pro"
+          },
+          "verdict": "go",
+          "timestamp": "2026-05-29T21:47:32Z"
+        },
+        {
+          "seat": "claude-opus",
+          "harness": {
+            "name": "claude-opus",
+            "version": "0"
+          },
+          "provider": {
+            "name": "anthropic",
+            "model": "claude-opus-4-8"
+          },
+          "verdict": "go",
+          "timestamp": "2026-05-29T21:47:32Z"
+        }
+      ],
+      "decision": {
+        "escalation_reason": "Opus BLOCKed plan v1 (unsound -h rule keyed off command-path index, would regress bp <cmd> --help). Revised to value-slot-aware help in parseCommand. Both PASS round 2.",
+        "degraded_reason": "Level 1 (agy+Opus)"
+      },
+      "timestamp": "2026-05-29T21:47:32Z"
     }
   ]
 }
