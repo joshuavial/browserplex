@@ -1,0 +1,34 @@
+# Bead browserplex-7p0.2 — VERIFY
+
+## Build & regression
+- `npm run build` → clean. New: `dist/core/dispatch.js`, `dist/daemon/{protocol,server}.js`.
+- `npm test` → **68/68 pass** (core untouched; this bead is additive).
+
+## Round-trip script (the acceptance) — `/tmp/verify-d2.mjs`, RESULT: PASS
+Spawned `node dist/daemon/server.js`, connected a raw `net` client, exercised the wire protocol:
+- ✓ socket file created at `~/.browserplex/daemon.sock`.
+- ✓ **`session_create` (chromium headless) → ok** ("Created chromium session 'd2'").
+- ✓ **`browser_navigate` → ok** against the live browser the daemon holds ("Navigated to
+  https://example.com").
+- ✓ `browser_snapshot` returns both `text` and structured `data` (data.url echoed) — proves the
+  `ActionResult.data` wire path.
+- ✓ **error isolation:** unknown tool → `{ok:false, error:"Unknown tool: …"}`; a malformed JSON line
+  and a missing-`id` shape error each produce an error reply **without killing the connection**;
+  subsequent `session_list` still succeeds.
+- ✓ **clean shutdown:** `SIGTERM` → daemon exits code 0 and the socket file is removed.
+
+## PLAN-gate follow-ups — confirmed applied
+1. Shutdown: `shuttingDown` re-entrancy guard + 10s `unref()`'d force-exit backstop. ✓
+2. `reply.id === request.id` invariant; best-effort id echo even on shape errors; `id:null` only when
+   unparseable. ✓ (script asserts both)
+3. Socket perms `0o600` via `fs.chmod`. ✓
+4. `LineDecoder` skips empty lines and throws past `MAX_LINE_BYTES` (16 MiB) → connection rejected
+   + destroyed. ✓
+5. JSON encode wrapped (`safeEncode`) so a non-serializable `data` degrades to an error reply rather
+   than crashing. ✓
+6. `EADDRINUSE` → **probe the socket** (`net.connect`): live daemon → exit cleanly; stale → unlink &
+   retry. Never blindly unlinks a live daemon. ✓
+
+## Result
+**PASS** — daemon hosts the live sessionManager over the unix socket, round-trips
+session_create+navigate, isolates bad input, and shuts down cleanly.
