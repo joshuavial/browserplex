@@ -1,5 +1,5 @@
 {
-  "manifest_version": 2,
+  "manifest_version": 3,
   "run_id": "bp-7p0.5",
   "workflow": "manual",
   "workflow_version": "manual-v1",
@@ -32,6 +32,67 @@
         "size": 5788
       },
       "timestamp": "2026-05-29T21:22:38.059866Z"
+    }
+  ],
+  "gates": [
+    {
+      "gate_id": "7p0.5-plan",
+      "phase": "plan",
+      "round": 2,
+      "tier": 2,
+      "status": "pass",
+      "reviewed_stages": [
+        {
+          "stage": "plan",
+          "role": "plan",
+          "artifact": "095ec9400bc45d85f0361d67e3d76010357cc22bbec25d7e74d7c40cedbd0f23"
+        }
+      ],
+      "seats": [
+        {
+          "seat": "agy",
+          "harness": {
+            "name": "agy",
+            "version": "0"
+          },
+          "provider": {
+            "name": "google",
+            "model": "gemini-3.1-pro"
+          },
+          "verdict": "go",
+          "timestamp": "2026-05-29T21:22:38Z"
+        },
+        {
+          "seat": "claude-opus",
+          "harness": {
+            "name": "claude-opus",
+            "version": "0"
+          },
+          "provider": {
+            "name": "anthropic",
+            "model": "claude-opus-4-8"
+          },
+          "verdict": "go",
+          "timestamp": "2026-05-29T21:22:38Z"
+        },
+        {
+          "seat": "codex",
+          "harness": {
+            "name": "codex",
+            "version": "0"
+          },
+          "provider": {
+            "name": "openai",
+            "model": "gpt-5.5-xhigh"
+          },
+          "verdict": "go",
+          "timestamp": "2026-05-29T21:22:38Z"
+        }
+      ],
+      "decision": {
+        "escalation_reason": "Codex BLOCKed plan v1 (idle in-flight race; unsafe kill(pid); stale-socket TOCTOU). Plan revised: idle=sessions&&inFlight&&openConnections, RPC control instead of signals, bounded probe-unlink-reprobe. All seats PASS round 2."
+      },
+      "timestamp": "2026-05-29T21:22:38Z"
     }
   ]
 }
