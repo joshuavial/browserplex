@@ -189,6 +189,52 @@
         "degraded_reason": "Level 1 (agy+Opus)"
       },
       "timestamp": "2026-05-29T21:47:32Z"
+    },
+    {
+      "gate_id": "7p0.7-review",
+      "phase": "review",
+      "round": 1,
+      "tier": 1,
+      "status": "pass",
+      "reviewed_stages": [
+        {
+          "stage": "review",
+          "role": "review",
+          "artifact": "2d9622f6339c2e71fde306dd4afde1e60e0f2f13df8fe4abeaaf72e8829e2ef1"
+        }
+      ],
+      "seats": [
+        {
+          "seat": "agy",
+          "harness": {
+            "name": "agy",
+            "version": "0"
+          },
+          "provider": {
+            "name": "google",
+            "model": "gemini-3.1-pro"
+          },
+          "verdict": "go",
+          "timestamp": "2026-05-29T21:54:42Z"
+        },
+        {
+          "seat": "claude-opus",
+          "harness": {
+            "name": "claude-opus",
+            "version": "0"
+          },
+          "provider": {
+            "name": "anthropic",
+            "model": "claude-opus-4-8"
+          },
+          "verdict": "go",
+          "timestamp": "2026-05-29T21:54:42Z"
+        }
+      ],
+      "decision": {
+        "degraded_reason": "Level 1 (agy+Opus). Both PASS; stale snapshot Tools-row fixed."
+      },
+      "timestamp": "2026-05-29T21:54:42Z"
     }
   ]
 }
