@@ -188,6 +188,55 @@
         "degraded_reason": "Level 1 (low-risk reversible CLI frontend): agy + Opus seats, no Codex"
       },
       "timestamp": "2026-05-29T21:08:58Z"
+    },
+    {
+      "gate_id": "7p0.4-review",
+      "phase": "review",
+      "round": 1,
+      "tier": 1,
+      "status": "pass",
+      "reviewed_stages": [
+        {
+          "stage": "review",
+          "role": "review",
+          "artifact": "54f9501fd4e89220eeeab3abc79293d6f054841238cc6eafb77845f06bb471bd"
+        }
+      ],
+      "seats": [
+        {
+          "seat": "agy",
+          "harness": {
+            "name": "agy",
+            "version": "0"
+          },
+          "provider": {
+            "name": "google",
+            "model": "gemini-3.1-pro"
+          },
+          "verdict": "go",
+          "timestamp": "2026-05-29T21:16:33Z"
+        },
+        {
+          "seat": "claude-opus",
+          "harness": {
+            "name": "claude-opus",
+            "version": "0"
+          },
+          "provider": {
+            "name": "anthropic",
+            "model": "claude-opus-4-8"
+          },
+          "verdict": "go",
+          "timestamp": "2026-05-29T21:16:33Z"
+        }
+      ],
+      "decision": {
+        "degraded_reason": "Level 1 (agy + Opus). Both PASS. Minor nits (-h-as-positional, --field+--fields-json precedence) tracked on .7.",
+        "deferred_beads": [
+          "browserplex-7p0.7"
+        ]
+      },
+      "timestamp": "2026-05-29T21:16:33Z"
     }
   ]
 }
