@@ -1,0 +1,44 @@
+{
+  "manifest_version": 2,
+  "run_id": "retro-workflow-workflow-20260529T213321Z",
+  "workflow": "retro",
+  "workflow_version": "retro-v1",
+  "created": "2026-05-29T21:33:21.481983Z",
+  "refs": {
+    "bead.1": "browserplex-2mv",
+    "bead.2": "browserplex-7p0.4",
+    "bead.3": "browserplex-7p0.5",
+    "decision": "accepted",
+    "scope": "workflow",
+    "trigger": "scheduled"
+  },
+  "stages": [
+    {
+      "stage": "retro",
+      "produced_by": "retro",
+      "git_sha": "104c6027fd7cf6239a87b103ec2993eb2dc6d18a",
+      "producer": {
+        "harness": {
+          "name": "claude-code",
+          "version": ""
+        },
+        "model": "claude-opus-4-8",
+        "skill": {
+          "id": "retro",
+          "repo": "manual",
+          "version": "manual"
+        }
+      },
+      "inputs": [],
+      "output": {
+        "role": "retro",
+        "artifact": "4961b344533de3bd322fe257d2199663824891c469b3202c1b7bd144b2820605",
+        "path": "artifacts/sha256/49/4961b344533de3bd322fe257d2199663824891c469b3202c1b7bd144b2820605",
+        "media_type": "text/markdown; charset=utf-8",
+        "storage": "content",
+        "size": 3339
+      },
+      "timestamp": "2026-05-29T21:33:21.481983Z"
+    }
+  ]
+}

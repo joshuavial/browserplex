@@ -1,0 +1,47 @@
+# Retro — browserplex, beads 2mv / .4 / .5
+
+Subjects: browserplex-2mv (electron session type, P0), bp-7p0.4 (CLI command surface),
+bp-7p0.5 (daemon lifecycle). All closed.
+
+## What worked
+- **Plan-phase gates caught a fundamental architectural error.** On the electron bead, Codex's PLAN
+  BLOCK — that `_electron.launch` resolves the binary via `require('electron')`, NOT from `cwd` —
+  was a genuine design flaw I'd otherwise have shipped (the whole "no runtime dep, uses target's
+  electron via cwd" premise was false). Verifying against Playwright's source confirmed it; fix was
+  `executablePath`.
+- **Risk-scaled gate levels paid off.** Level 1 (agy+Opus) for the reversible CLI frontend (.4) was
+  fast and sufficient; Level 2 (+Codex) for the lifecycle bead (.5) caught the real plan BLOCK
+  (idle-exit race) AND the `BROWSERPLEX_IDLE_MS=0` bug. Match the seats to the blast radius.
+- **Investigating failures (not dismissing) surfaced real improvements** even when the trigger was a
+  test bug: the excess-positional guard (.4) and the IDLE_MS=0 fix (.5) came out of chasing
+  "failures" to root cause.
+
+## What cost time / what to change
+1. **I asserted framework behavior from memory and was wrong (electron `cwd`).**
+   → PROCESS CHANGE: when a plan claims how a dependency behaves, VERIFY it in `node_modules`/docs
+   BEFORE the gate, and state it as "verified in <file:line>", not as an assumption.
+2. **Test-harness bugs repeatedly masqueraded as code failures** — .4 stray positionals + forgetting
+   eval results are JSON-quoted; .5 polling-via-connections re-armed the idle timer, and a plain file
+   isn't a real stale socket.
+   → PROCESS CHANGE: when a verify check FAILS, first reconcile the TEST against the actual contract
+   (use real protocol helpers; observe lifecycle via pid not socket-connect; simulate stale state
+   realistically e.g. SIGKILL) before concluding the code is broken. Most of my "FAIL" cycles were
+   test artifacts.
+3. **`Number(x) || default` is a recurring footgun when 0 is a valid value** (IDLE_MS=0 disable).
+   → PROCESS CHANGE: add to the pre-gate self-audit — any `|| default` coercion on a numeric
+   env/config where 0/empty is meaningful; parse explicitly.
+4. **Codex is the highest-yield blocker-catcher for systems/subtle beads** (electron resolution,
+   oversized-line OOM, fd leak, idle race, IDLE_MS=0). Keep it on Level 2; agy+Opus suffice for
+   pure-frontend.
+
+## Feed-forward into .6 / .7
+- **.6 (tests):** the /tmp verify scripts (d2c, d3, d4, d5, idle0, electron) ARE the e2e suite —
+  formalize the best as committed vitest tests (daemon IPC round-trip + CLI e2e + lifecycle), using
+  real protocol helpers and pid-based lifecycle observation (lessons #2). Guard env-dependent ones
+  (electron) with skip.
+- **.7 (docs/packaging) is now sizable** — accumulated tracked notes: stale `dist/index.js` README
+  path, add `bp` bin, CLI usage section, `bp serve/status/stop` + `BROWSERPLEX_IDLE_MS` docs, the
+  `-h`/`--fields-json` CLI nits, and the deferred lifecycle edges (abandoned-connection reaping,
+  ENOTSOCK recovery, non-atomic unlink). Budget for it.
+- Carry the expanded pre-gate self-audit checklist: numeric `||` coercion, resource lifecycle
+  (streams/fds/timers/listeners/counters), framework-claim verification, test-harness correctness.
