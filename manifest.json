@@ -1,5 +1,5 @@
 {
-  "manifest_version": 2,
+  "manifest_version": 3,
   "run_id": "bp-le1",
   "workflow": "manual",
   "workflow_version": "manual-v1",
@@ -32,6 +32,55 @@
         "size": 9433
       },
       "timestamp": "2026-05-29T22:19:23.693253Z"
+    }
+  ],
+  "gates": [
+    {
+      "gate_id": "le1-review",
+      "phase": "review",
+      "round": 2,
+      "tier": 1,
+      "status": "pass",
+      "reviewed_stages": [
+        {
+          "stage": "review",
+          "role": "review",
+          "artifact": "732fc28e790b13189a3f16e6f9bc3a6bc971aafc4f1dea80c25d1da662b9efe9"
+        }
+      ],
+      "seats": [
+        {
+          "seat": "agy",
+          "harness": {
+            "name": "agy",
+            "version": "0"
+          },
+          "provider": {
+            "name": "google",
+            "model": "gemini-3.1-pro"
+          },
+          "verdict": "go",
+          "timestamp": "2026-05-29T22:19:23Z"
+        },
+        {
+          "seat": "claude-opus",
+          "harness": {
+            "name": "claude-opus",
+            "version": "0"
+          },
+          "provider": {
+            "name": "anthropic",
+            "model": "claude-opus-4-8"
+          },
+          "verdict": "go",
+          "timestamp": "2026-05-29T22:19:23Z"
+        }
+      ],
+      "decision": {
+        "escalation_reason": "Both seats BLOCKed an inaccurate primer example (bp wait --selector; wait takes a positional). Fixed + clarified refs/aliases/globals. Both PASS round 2.",
+        "degraded_reason": "Level 1 (agy+Opus)"
+      },
+      "timestamp": "2026-05-29T22:19:23Z"
     }
   ]
 }
