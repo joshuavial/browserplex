@@ -1,0 +1,37 @@
+{
+  "manifest_version": 2,
+  "run_id": "bp-7p0.4",
+  "workflow": "manual",
+  "workflow_version": "manual-v1",
+  "created": "2026-05-29T21:08:58.423895Z",
+  "refs": {},
+  "stages": [
+    {
+      "stage": "plan",
+      "produced_by": "original",
+      "git_sha": "e29ec57dd3aee2c32c9076b8686d0fc585523b96",
+      "producer": {
+        "harness": {
+          "name": "claude-code",
+          "version": ""
+        },
+        "model": "claude-opus-4-8",
+        "skill": {
+          "id": "plan",
+          "repo": "manual",
+          "version": "manual"
+        }
+      },
+      "inputs": [],
+      "output": {
+        "role": "plan",
+        "artifact": "1cf820ed039aaef48e6bd48c0c157ad18c43bf2402791d7cce933de48400c275",
+        "path": "artifacts/sha256/1c/1cf820ed039aaef48e6bd48c0c157ad18c43bf2402791d7cce933de48400c275",
+        "media_type": "text/markdown; charset=utf-8",
+        "storage": "content",
+        "size": 5274
+      },
+      "timestamp": "2026-05-29T21:08:58.423895Z"
+    }
+  ]
+}
