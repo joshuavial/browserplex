@@ -1,5 +1,5 @@
 {
-  "manifest_version": 2,
+  "manifest_version": 3,
   "run_id": "bp-2mv",
   "workflow": "manual",
   "workflow_version": "manual-v1",
@@ -32,6 +32,65 @@
         "size": 5083
       },
       "timestamp": "2026-05-29T20:40:17.473391Z"
+    }
+  ],
+  "gates": [
+    {
+      "gate_id": "2mv-plan",
+      "phase": "plan",
+      "round": 1,
+      "tier": 2,
+      "status": "pass",
+      "reviewed_stages": [
+        {
+          "stage": "plan",
+          "role": "plan",
+          "artifact": "fb00422c5c288d327b704ae56bae636a165f7565616b95717c3dc079a3fe5405"
+        }
+      ],
+      "seats": [
+        {
+          "seat": "agy",
+          "harness": {
+            "name": "agy",
+            "version": "0"
+          },
+          "provider": {
+            "name": "google",
+            "model": "gemini-3.1-pro"
+          },
+          "verdict": "go",
+          "timestamp": "2026-05-29T20:40:17Z"
+        },
+        {
+          "seat": "claude-opus",
+          "harness": {
+            "name": "claude-opus",
+            "version": "0"
+          },
+          "provider": {
+            "name": "anthropic",
+            "model": "claude-opus-4-8"
+          },
+          "verdict": "go",
+          "timestamp": "2026-05-29T20:40:17Z"
+        },
+        {
+          "seat": "codex",
+          "harness": {
+            "name": "codex",
+            "version": "0"
+          },
+          "provider": {
+            "name": "openai",
+            "model": "gpt-5.5-xhigh"
+          },
+          "verdict": "go",
+          "timestamp": "2026-05-29T20:40:17Z"
+        }
+      ],
+      "decision": {},
+      "timestamp": "2026-05-29T20:40:17Z"
     }
   ]
 }
