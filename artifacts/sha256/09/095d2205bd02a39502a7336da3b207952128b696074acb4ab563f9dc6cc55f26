@@ -1,0 +1,343 @@
+diff --git a/src/cli/commands.ts b/src/cli/commands.ts
+index a95552a..aba3972 100644
+--- a/src/cli/commands.ts
++++ b/src/cli/commands.ts
+@@ -435,6 +435,10 @@ export function topUsage(): string {
+     }
+     lines.push(`  ${spec.path.join(" ").padEnd(22)} ${spec.summary}`);
+   }
++  lines.push("");
++  lines.push("  serve                  Run the daemon in the foreground");
++  lines.push("  daemon status          Show daemon status");
++  lines.push("  daemon stop            Stop the running daemon");
+   lines.push("", "Global: -s/--session <name>, --json, -h/--help");
+   return lines.join("\n");
+ }
+diff --git a/src/cli/index.ts b/src/cli/index.ts
+index 7d4b31c..f38f621 100644
+--- a/src/cli/index.ts
++++ b/src/cli/index.ts
+@@ -1,6 +1,7 @@
+ #!/usr/bin/env node
+ import { DaemonClient } from "../daemon/client.js";
+ import { COMMANDS, parseCommand, render, topUsage, usageFor, CliError } from "./commands.js";
++import { serve, status, stop } from "./meta.js";
+ 
+ /**
+  * `bp` CLI entry. Parses argv into a command + args via the declarative table in commands.ts,
+@@ -16,6 +17,11 @@ async function main(): Promise<number> {
+     return argv.length === 0 ? 1 : 0;
+   }
+ 
++  // Daemon lifecycle meta-commands (not daemon tools; handled before the dispatch table).
++  if (argv[0] === "serve") return serve();
++  if (argv[0] === "daemon" && argv[1] === "status") return status();
++  if (argv[0] === "daemon" && argv[1] === "stop") return stop();
++
+   // Per-command help: `bp <command...> --help`.
+   if (argv.includes("-h") || argv.includes("--help")) {
+     const spec = COMMANDS.find((s) => s.path.every((p, i) => argv[i] === p));
+diff --git a/src/cli/meta.ts b/src/cli/meta.ts
+new file mode 100644
+index 0000000..741b17e
+--- /dev/null
++++ b/src/cli/meta.ts
+@@ -0,0 +1,87 @@
++import net from "node:net";
++import { spawn } from "node:child_process";
++import { promises as fs } from "node:fs";
++import { DaemonClient, DAEMON_ENTRY } from "../daemon/client.js";
++import { SOCKET_PATH, PID_PATH } from "../daemon/protocol.js";
++
++const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
++
++/** Single non-spawning connectivity probe. */
++function isListening(): Promise<boolean> {
++  return new Promise((resolve) => {
++    const c = net.connect(SOCKET_PATH);
++    const done = (v: boolean) => {
++      c.destroy();
++      resolve(v);
++    };
++    c.once("connect", () => done(true));
++    c.once("error", () => done(false));
++  });
++}
++
++/** `bp serve` — run the daemon in the foreground (logs to this terminal). */
++export async function serve(): Promise<number> {
++  if (await isListening()) {
++    // eslint-disable-next-line no-console
++    console.log("daemon already running");
++    return 0;
++  }
++  const child = spawn(process.execPath, [DAEMON_ENTRY], { stdio: "inherit" });
++  const forward = (sig: NodeJS.Signals) => () => child.kill(sig);
++  process.on("SIGINT", forward("SIGINT"));
++  process.on("SIGTERM", forward("SIGTERM"));
++  return await new Promise<number>((resolve) => child.on("exit", (code) => resolve(code ?? 0)));
++}
++
++/** `bp daemon status`. */
++export async function status(): Promise<number> {
++  const client = new DaemonClient();
++  if (!(await client.connectExisting())) {
++    const stale = await fs
++      .access(PID_PATH)
++      .then(() => true)
++      .catch(() => false);
++    // eslint-disable-next-line no-console
++    console.log(stale ? "not running (stale pid/socket)" : "not running");
++    return 0;
++  }
++  try {
++    const res = await client.request("__daemon_status");
++    const d = (res.data ?? {}) as { pid?: number; sessions?: string[]; uptimeMs?: number };
++    const sessions = d.sessions ?? [];
++    // eslint-disable-next-line no-console
++    console.log(
++      `running (pid ${d.pid ?? "?"}), ${sessions.length} session(s)` +
++        (sessions.length ? `: ${sessions.join(", ")}` : ""),
++    );
++    return 0;
++  } finally {
++    client.close();
++  }
++}
++
++/** `bp daemon stop`. */
++export async function stop(): Promise<number> {
++  const client = new DaemonClient();
++  if (!(await client.connectExisting())) {
++    // not running; clean up a stale pid/socket if present
++    await fs.unlink(SOCKET_PATH).catch(() => {});
++    await fs.unlink(PID_PATH).catch(() => {});
++    // eslint-disable-next-line no-console
++    console.log("not running");
++    return 0;
++  }
++  try {
++    await client.request("__daemon_stop").catch(() => {}); // reply is best-effort; daemon exits
++  } finally {
++    client.close();
++  }
++  // wait for the socket to disappear (daemon's graceful shutdown unlinks it)
++  for (let i = 0; i < 50; i++) {
++    if (!(await isListening())) break;
++    await sleep(100);
++  }
++  // eslint-disable-next-line no-console
++  console.log("stopped");
++  return 0;
++}
+diff --git a/src/daemon/client.ts b/src/daemon/client.ts
+index de84eef..89e4b7d 100644
+--- a/src/daemon/client.ts
++++ b/src/daemon/client.ts
+@@ -15,7 +15,7 @@ import {
+ 
+ const __dirname = path.dirname(fileURLToPath(import.meta.url));
+ /** The compiled daemon entry, resolved relative to this module (dist/daemon/). */
+-const DAEMON_ENTRY = path.resolve(__dirname, "server.js");
++export const DAEMON_ENTRY = path.resolve(__dirname, "server.js");
+ 
+ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+ 
+@@ -41,6 +41,23 @@ export class DaemonClient {
+       opts.requestTimeoutMs ?? Number(process.env.BROWSERPLEX_TIMEOUT ?? 0) ?? 0;
+   }
+ 
++  /**
++   * Connect to an already-running daemon WITHOUT auto-spawning. Returns false if no daemon is
++   * listening (ENOENT/ECONNREFUSED). Used by `bp daemon status`/`stop`/`serve` which must not spawn.
++   */
++  async connectExisting(): Promise<boolean> {
++    if (this.socket) return true;
++    try {
++      this.socket = await this.tryConnect();
++      this.attachHandlers(this.socket);
++      return true;
++    } catch (e) {
++      const code = (e as NodeJS.ErrnoException).code;
++      if (code === "ENOENT" || code === "ECONNREFUSED") return false;
++      throw e;
++    }
++  }
++
+   /** Connect, auto-spawning the daemon if it isn't running yet. */
+   async connect(): Promise<void> {
+     if (this.socket) return;
+diff --git a/src/daemon/server.ts b/src/daemon/server.ts
+index 6e9942b..038a41d 100644
+--- a/src/daemon/server.ts
++++ b/src/daemon/server.ts
+@@ -19,6 +19,43 @@ function log(msg: string): void {
+   console.error(`[browserplexd ${new Date().toISOString()}] ${msg}`);
+ }
+ 
++// ---- lifecycle state ----
++// Idle-exit grace period; 0 disables. Default 5 min.
++const IDLE_MS = Number(process.env.BROWSERPLEX_IDLE_MS ?? "") || 300_000;
++const startedAt = Date.now();
++let serverRef: net.Server; // set in main() before bind so control/idle paths can reach it
++let inFlight = 0; // requests dispatched but not yet replied
++let openConnections = 0; // currently-connected clients
++let idleTimer: ReturnType<typeof setTimeout> | null = null;
++
++/** True only when nothing is holding the daemon: no sessions, no in-flight requests, no clients. */
++function isIdle(): boolean {
++  return sessionManager.list().length === 0 && inFlight === 0 && openConnections === 0;
++}
++
++/**
++ * Re-evaluate idle state on every transition (connection open/close, request complete, startup).
++ * Arms a single unref'd timer when idle; clears it otherwise. On fire it re-checks isIdle() — so a
++ * client/session that appeared between arming and firing cannot be dropped.
++ */
++function evaluateIdle(): void {
++  if (idleTimer) {
++    clearTimeout(idleTimer);
++    idleTimer = null;
++  }
++  if (IDLE_MS <= 0 || !isIdle()) return;
++  idleTimer = setTimeout(() => {
++    idleTimer = null;
++    if (isIdle()) {
++      log(`idle for ${IDLE_MS}ms with no sessions/connections; shutting down`);
++      void shutdown("idle", serverRef);
++    } else {
++      evaluateIdle(); // something arrived during the wait — re-arm
++    }
++  }, IDLE_MS);
++  idleTimer.unref();
++}
++
+ /** Validate a parsed line into a DaemonRequest, or throw. */
+ function asRequest(parsed: unknown): DaemonRequest {
+   if (typeof parsed !== "object" || parsed === null) {
+@@ -44,6 +81,19 @@ async function handleRequest(line: string): Promise<DaemonResponse> {
+     }
+     const req = asRequest(parsed);
+     id = req.id;
++    // Control RPC (handled before the tool registry so no fake entries leak into it).
++    if (req.tool === "__daemon_status") {
++      return {
++        id,
++        ok: true,
++        data: { pid: process.pid, sessions: sessionManager.list().map((s) => s.name), uptimeMs: Date.now() - startedAt },
++      };
++    }
++    if (req.tool === "__daemon_stop") {
++      // Reply first, then shut down on the next tick so the reply can flush.
++      setImmediate(() => void shutdown("rpc", serverRef));
++      return { id, ok: true, text: "stopping" };
++    }
+     const action = actionDispatch[req.tool];
+     if (!action) {
+       return { id, ok: false, error: `Unknown tool: ${req.tool}` };
+@@ -79,6 +129,9 @@ function onConnection(socket: net.Socket): void {
+   const decoder = new LineDecoder();
+   let closing = false; // set once we reject/close — stops all further reads + writes
+ 
++  openConnections++;
++  evaluateIdle(); // a live client suppresses idle-exit
++
+   const reply = (res: DaemonResponse) => {
+     if (closing || socket.destroyed || !socket.writable) return;
+     socket.write(safeEncode(res));
+@@ -100,12 +153,26 @@ function onConnection(socket: net.Socket): void {
+       return;
+     }
+     for (const line of lines) {
+-      handleRequest(line).then(reply);
++      // Track in-flight so idle-exit can't fire while a request (incl. session_create) is mid-flight.
++      inFlight++;
++      handleRequest(line)
++        .then(reply)
++        .catch(() => {
++          /* handleRequest never throws, but guard the .then(reply) write path */
++        })
++        .finally(() => {
++          inFlight--;
++          evaluateIdle();
++        });
+     }
+   });
+   socket.on("error", () => {
+     /* client vanished mid-write — ignore */
+   });
++  socket.on("close", () => {
++    openConnections--;
++    evaluateIdle();
++  });
+ }
+ 
+ // ---- shutdown (re-entrant guard + force-exit timeout) ----
+@@ -113,6 +180,10 @@ let shuttingDown = false;
+ async function shutdown(signal: string, server: net.Server): Promise<void> {
+   if (shuttingDown) return;
+   shuttingDown = true;
++  if (idleTimer) {
++    clearTimeout(idleTimer); // no stale idle fire after a signal/RPC shutdown
++    idleTimer = null;
++  }
+   log(`received ${signal}, shutting down`);
+   // force-exit backstop so a hung browser close can't wedge the daemon
+   const force = setTimeout(() => {
+@@ -161,6 +232,7 @@ async function main(): Promise<void> {
+   await fs.chmod(BASE_DIR, 0o700).catch(() => {});
+ 
+   const server = net.createServer(onConnection);
++  serverRef = server;
+ 
+   const startListen = () =>
+     new Promise<void>((resolve, reject) => {
+@@ -172,30 +244,35 @@ async function main(): Promise<void> {
+       });
+     });
+ 
+-  try {
+-    await startListen();
+-  } catch (e) {
+-    if ((e as NodeJS.ErrnoException).code === "EADDRINUSE") {
+-      // Do NOT blindly unlink — a live daemon may own it. Probe first.
+-      const alive = await probeSocket();
+-      if (alive) {
++  // Bind with bounded stale-socket recovery. On EADDRINUSE: probe — a live listener means another
++  // daemon owns it (exit); a stale socket gets unlinked and we retry. If a concurrent daemon rebinds
++  // between our probe and unlink, the next listen throws EADDRINUSE again and we re-probe (rather than
++  // blindly unlinking a now-live socket). Bounded so a persistent failure can't loop forever.
++  let bound = false;
++  for (let attempt = 0; attempt < 5 && !bound; attempt++) {
++    try {
++      await startListen();
++      bound = true;
++    } catch (e) {
++      if ((e as NodeJS.ErrnoException).code !== "EADDRINUSE") throw e;
++      if (await probeSocket()) {
+         log(`a daemon is already listening on ${SOCKET_PATH}; exiting`);
+         process.exit(0);
+       }
+-      log(`removing stale socket ${SOCKET_PATH}`);
+-      await fs.unlink(SOCKET_PATH).catch(() => {});
+-      await startListen();
+-    } else {
+-      throw e;
++      log(`removing stale socket ${SOCKET_PATH} (attempt ${attempt + 1})`);
++      await fs.unlink(SOCKET_PATH).catch(() => {}); // tolerate ENOENT / races
+     }
+   }
++  if (!bound) throw new Error(`could not bind ${SOCKET_PATH} after stale-recovery attempts`);
+ 
+   await fs.chmod(SOCKET_PATH, SOCKET_MODE).catch(() => {});
+   await fs.writeFile(PID_PATH, String(process.pid));
+-  log(`listening on ${SOCKET_PATH} (pid ${process.pid})`);
++  log(`listening on ${SOCKET_PATH} (pid ${process.pid}, idle ${IDLE_MS}ms)`);
+ 
+   process.on("SIGINT", () => void shutdown("SIGINT", server));
+   process.on("SIGTERM", () => void shutdown("SIGTERM", server));
++
++  evaluateIdle(); // a daemon spawned but never used still idle-exits after the grace period
+ }
+ 
+ main().catch((e) => {
