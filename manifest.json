@@ -199,6 +199,67 @@
       ],
       "decision": {},
       "timestamp": "2026-05-29T08:23:57Z"
+    },
+    {
+      "gate_id": "7p0.1-review",
+      "phase": "review",
+      "round": 1,
+      "tier": 2,
+      "status": "pass",
+      "reviewed_stages": [
+        {
+          "stage": "review",
+          "role": "review",
+          "artifact": "43a9b81da5ec2556fcb2a555d5effbd78e31f0a6c7166ab1a3b7828f799e20a7"
+        }
+      ],
+      "seats": [
+        {
+          "seat": "agy",
+          "harness": {
+            "name": "antigravity-cli",
+            "version": "0"
+          },
+          "provider": {
+            "name": "google",
+            "model": "gemini-3.1-pro"
+          },
+          "verdict": "go",
+          "timestamp": "2026-05-29T08:33:59Z"
+        },
+        {
+          "seat": "claude-opus",
+          "harness": {
+            "name": "claude-code",
+            "version": "0"
+          },
+          "provider": {
+            "name": "anthropic",
+            "model": "claude-opus-4-8"
+          },
+          "verdict": "go",
+          "timestamp": "2026-05-29T08:33:59Z"
+        },
+        {
+          "seat": "codex",
+          "harness": {
+            "name": "codex",
+            "version": "0"
+          },
+          "provider": {
+            "name": "openai",
+            "model": "gpt-5-codex-xhigh"
+          },
+          "verdict": "go",
+          "timestamp": "2026-05-29T08:33:59Z"
+        }
+      ],
+      "decision": {
+        "deferred_beads": [
+          "browserplex-7p0.4"
+        ]
+      },
+      "timestamp": "2026-05-29T08:33:59Z"
     }
   ]
 }
