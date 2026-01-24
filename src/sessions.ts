@@ -18,19 +18,10 @@ class SessionManager {
       context = await browser.newContext();
       page = await context.newPage();
     } else if (type === 'camoufox') {
-      // Camoufox returns a Browser or BrowserContext
-      const { Camoufox } = await import('camoufox');
-      const result = await Camoufox({ headless: true });
-      // Camoufox can return Browser or BrowserContext depending on options
-      if ('newContext' in result) {
-        // It's a Browser
-        browser = result as Browser;
-        context = await (result as Browser).newContext();
-      } else {
-        // It's a BrowserContext
-        context = result as BrowserContext;
-        browser = context;
-      }
+      // camoufox-js returns Browser by default (no user_data_dir)
+      const { Camoufox } = await import('camoufox-js');
+      browser = await Camoufox({ headless: true }) as Browser;
+      context = await browser.newContext();
       page = await context.newPage();
     } else {
       throw new Error(`Unknown browser type: ${type}`);
