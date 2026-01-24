@@ -2,6 +2,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
+import sharp from "sharp";
 import { sessionManager } from "./sessions.js";
 
 const server = new McpServer({
@@ -145,15 +146,31 @@ server.tool(
 
 server.tool(
   "browser_take_screenshot",
-  "Take a screenshot of the current page",
+  "Take a screenshot of the current page (auto-resized to fit LLM limits)",
   {
     session: z.string().describe("Session name"),
     fullPage: z.boolean().default(false).describe("Capture full scrollable page"),
+    maxDimension: z.number().default(1280).describe("Max width/height in pixels (default 1280, safe for LLM context)"),
   },
-  async ({ session, fullPage }) => {
+  async ({ session, fullPage, maxDimension }) => {
     try {
       const s = sessionManager.getOrThrow(session);
-      const buffer = await s.page.screenshot({ fullPage });
+      const rawBuffer = await s.page.screenshot({ fullPage });
+
+      // Resize if needed to stay within LLM image limits
+      const metadata = await sharp(rawBuffer).metadata();
+      let buffer = rawBuffer;
+
+      if (metadata.width && metadata.height) {
+        const maxSide = Math.max(metadata.width, metadata.height);
+        if (maxSide > maxDimension) {
+          buffer = await sharp(rawBuffer)
+            .resize(maxDimension, maxDimension, { fit: 'inside', withoutEnlargement: true })
+            .png()
+            .toBuffer();
+        }
+      }
+
       const base64 = buffer.toString("base64");
       return {
         content: [{
