@@ -30,10 +30,12 @@ server.tool(
   },
   async ({ name, type, headless }) => {
     try {
+      // Note: Zod defaults don't apply via MCP SDK, so we must apply explicitly
+      const browserType = type ?? 'chromium';
       // Default: chromium headless, camoufox headed (for manual interaction)
-      const useHeadless = headless ?? (type === 'chromium');
-      const session = await sessionManager.create(name, type, useHeadless);
-      return success(`Created ${type} session '${name}'${useHeadless ? '' : ' (headed)'}`);
+      const useHeadless = headless ?? (browserType === 'chromium');
+      const session = await sessionManager.create(name, browserType, useHeadless);
+      return success(`Created ${browserType} session '${name}'${useHeadless ? '' : ' (headed)'}`);
     } catch (e) {
       return error((e as Error).message);
     }
@@ -158,14 +160,16 @@ server.tool(
       const rawBuffer = await s.page.screenshot({ fullPage });
 
       // Resize if needed to stay within LLM image limits
+      // Note: Zod defaults don't apply via MCP SDK, so we must apply explicitly
+      const maxDim = maxDimension ?? 1280;
       const metadata = await sharp(rawBuffer).metadata();
       let buffer = rawBuffer;
 
       if (metadata.width && metadata.height) {
         const maxSide = Math.max(metadata.width, metadata.height);
-        if (maxSide > maxDimension) {
+        if (maxSide > maxDim) {
           buffer = await sharp(rawBuffer)
-            .resize(maxDimension, maxDimension, { fit: 'inside', withoutEnlargement: true })
+            .resize(maxDim, maxDim, { fit: 'inside', withoutEnlargement: true })
             .png()
             .toBuffer();
         }
@@ -197,7 +201,8 @@ server.tool(
   async ({ session, selector, timeout }) => {
     try {
       const s = sessionManager.getOrThrow(session);
-      await s.page.click(selector, { timeout });
+      const t = timeout ?? 5000;
+      await s.page.click(selector, { timeout: t });
       return success(`Clicked '${selector}'`);
     } catch (e) {
       return error((e as Error).message);
@@ -218,9 +223,10 @@ server.tool(
   async ({ session, selector, text, submit, timeout }) => {
     try {
       const s = sessionManager.getOrThrow(session);
-      await s.page.fill(selector, text, { timeout });
+      const t = timeout ?? 5000;
+      await s.page.fill(selector, text, { timeout: t });
       if (submit) {
-        await s.page.press(selector, "Enter", { timeout });
+        await s.page.press(selector, "Enter", { timeout: t });
       }
       return success(`Typed into '${selector}'${submit ? " and submitted" : ""}`);
     } catch (e) {
@@ -258,7 +264,8 @@ server.tool(
   async ({ session, selector, timeout }) => {
     try {
       const s = sessionManager.getOrThrow(session);
-      await s.page.hover(selector, { timeout });
+      const t = timeout ?? 5000;
+      await s.page.hover(selector, { timeout: t });
       return success(`Hovering over '${selector}'`);
     } catch (e) {
       return error((e as Error).message);
@@ -279,11 +286,13 @@ server.tool(
   async ({ session, selector, state, timeout }) => {
     try {
       const s = sessionManager.getOrThrow(session);
+      const waitState = state ?? 'visible';
+      const t = timeout ?? 30000;
       if (selector) {
-        await s.page.waitForSelector(selector, { state, timeout });
-        return success(`Element '${selector}' is ${state}`);
+        await s.page.waitForSelector(selector, { state: waitState, timeout: t });
+        return success(`Element '${selector}' is ${waitState}`);
       } else {
-        await s.page.waitForLoadState("networkidle", { timeout });
+        await s.page.waitForLoadState("networkidle", { timeout: t });
         return success("Page load complete");
       }
     } catch (e) {
