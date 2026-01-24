@@ -1,4 +1,4 @@
-import { chromium, type Browser, type BrowserContext, type Page } from 'playwright';
+import { chromium, webkit, type Browser, type BrowserContext, type Page } from 'playwright';
 import type { BrowserSession, BrowserType, SessionInfo } from './types.js';
 
 class SessionManager {
@@ -15,6 +15,10 @@ class SessionManager {
 
     if (type === 'chromium') {
       browser = await chromium.launch({ headless });
+      context = await browser.newContext();
+      page = await context.newPage();
+    } else if (type === 'webkit') {
+      browser = await webkit.launch({ headless });
       context = await browser.newContext();
       page = await context.newPage();
     } else if (type === 'camoufox') {

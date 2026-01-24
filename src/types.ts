@@ -1,6 +1,6 @@
 import type { Browser, BrowserContext, Page } from 'playwright';
 
-export type BrowserType = 'chromium' | 'camoufox';
+export type BrowserType = 'chromium' | 'webkit' | 'camoufox';
 
 export interface BrowserSession {
   name: string;
