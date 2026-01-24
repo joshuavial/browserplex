@@ -25,7 +25,7 @@ server.tool(
   "Create a new named browser session",
   {
     name: z.string().describe("Unique name for this browser session"),
-    type: z.enum(["chromium", "webkit", "camoufox"]).default("chromium").describe("Browser type: chromium (default), webkit (Safari engine), or camoufox (stealth)"),
+    type: z.enum(["chromium", "firefox", "webkit", "camoufox"]).default("chromium").describe("Browser type: chromium (default), firefox, webkit (Safari), or camoufox (stealth Firefox)"),
     headless: z.boolean().optional().describe("Run headless (default: true for chromium, false for camoufox)"),
   },
   async ({ name, type, headless }) => {

@@ -30,6 +30,7 @@ Add to your Claude settings (`~/.claude/.claude.json` or project settings):
 | Type | Engine | Use Case |
 |------|--------|----------|
 | `chromium` | Chrome/Edge | Default, fast, good DevTools |
+| `firefox` | Firefox | Standard Firefox browser |
 | `webkit` | Safari | Test Safari rendering, iOS compatibility |
 | `camoufox` | Firefox | Stealth browsing, anti-detection |
 
