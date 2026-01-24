@@ -1,5 +1,7 @@
 # browserplex
 
+> **Why this exists:** The standard Playwright MCP server doesn't support multiple concurrent users. When multiple AI agents try to use it simultaneously, they conflict over the single browser instance. Browserplex solves this by providing named sessions, allowing each agent to manage its own isolated browser session.
+
 MCP server for managing multiple named browser sessions. Built on Playwright with support for Chromium, Firefox, WebKit (Safari), and Camoufox (stealth Firefox).
 
 ## Installation
@@ -11,7 +13,7 @@ npm run build
 
 ## Usage
 
-### Via npx (after publishing)
+### Via npx
 
 ```json
 {
