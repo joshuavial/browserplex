@@ -172,11 +172,12 @@ server.tool(
   {
     session: z.string().describe("Session name"),
     selector: z.string().describe("CSS selector or text to click"),
+    timeout: z.number().default(5000).describe("Timeout in milliseconds"),
   },
-  async ({ session, selector }) => {
+  async ({ session, selector, timeout }) => {
     try {
       const s = sessionManager.getOrThrow(session);
-      await s.page.click(selector);
+      await s.page.click(selector, { timeout });
       return success(`Clicked '${selector}'`);
     } catch (e) {
       return error((e as Error).message);
@@ -192,13 +193,14 @@ server.tool(
     selector: z.string().describe("CSS selector for the input"),
     text: z.string().describe("Text to type"),
     submit: z.boolean().default(false).describe("Press Enter after typing"),
+    timeout: z.number().default(5000).describe("Timeout in milliseconds"),
   },
-  async ({ session, selector, text, submit }) => {
+  async ({ session, selector, text, submit, timeout }) => {
     try {
       const s = sessionManager.getOrThrow(session);
-      await s.page.fill(selector, text);
+      await s.page.fill(selector, text, { timeout });
       if (submit) {
-        await s.page.press(selector, "Enter");
+        await s.page.press(selector, "Enter", { timeout });
       }
       return success(`Typed into '${selector}'${submit ? " and submitted" : ""}`);
     } catch (e) {
@@ -231,11 +233,12 @@ server.tool(
   {
     session: z.string().describe("Session name"),
     selector: z.string().describe("CSS selector to hover over"),
+    timeout: z.number().default(5000).describe("Timeout in milliseconds"),
   },
-  async ({ session, selector }) => {
+  async ({ session, selector, timeout }) => {
     try {
       const s = sessionManager.getOrThrow(session);
-      await s.page.hover(selector);
+      await s.page.hover(selector, { timeout });
       return success(`Hovering over '${selector}'`);
     } catch (e) {
       return error((e as Error).message);
