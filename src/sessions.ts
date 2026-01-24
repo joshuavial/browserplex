@@ -1,5 +1,5 @@
 import { chromium, firefox, webkit, type Browser, type BrowserContext, type Page } from 'playwright';
-import type { BrowserSession, BrowserType, SessionInfo } from './types.js';
+import type { BrowserSession, BrowserType, SessionInfo, ConsoleMessage, NetworkRequest } from './types.js';
 
 class SessionManager {
   private sessions: Map<string, BrowserSession> = new Map();
@@ -35,6 +35,42 @@ class SessionManager {
       throw new Error(`Unknown browser type: ${type}`);
     }
 
+    const consoleMessages: ConsoleMessage[] = [];
+    const networkRequests: NetworkRequest[] = [];
+
+    // Set up console message listener
+    page.on('console', (msg) => {
+      consoleMessages.push({
+        type: msg.type(),
+        text: msg.text(),
+        timestamp: Date.now(),
+      });
+      // Keep only last 1000 messages
+      if (consoleMessages.length > 1000) {
+        consoleMessages.shift();
+      }
+    });
+
+    // Set up network request listener
+    page.on('request', (request) => {
+      networkRequests.push({
+        url: request.url(),
+        method: request.method(),
+        timestamp: Date.now(),
+      });
+      // Keep only last 1000 requests
+      if (networkRequests.length > 1000) {
+        networkRequests.shift();
+      }
+    });
+
+    page.on('response', (response) => {
+      const req = networkRequests.find(r => r.url === response.url() && !r.status);
+      if (req) {
+        req.status = response.status();
+      }
+    });
+
     const session: BrowserSession = {
       name,
       type,
@@ -42,6 +78,8 @@ class SessionManager {
       context,
       page,
       createdAt: new Date(),
+      consoleMessages,
+      networkRequests,
     };
 
     this.sessions.set(name, session);

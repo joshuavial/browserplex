@@ -92,6 +92,23 @@ server.tool(
 );
 
 server.tool(
+  "browser_navigate_back",
+  "Navigate back in browser history",
+  {
+    session: z.string().describe("Session name"),
+  },
+  async ({ session }) => {
+    try {
+      const s = sessionManager.getOrThrow(session);
+      await s.page.goBack();
+      return success(`Navigated back to ${s.page.url()}`);
+    } catch (e) {
+      return error((e as Error).message);
+    }
+  }
+);
+
+server.tool(
   "browser_snapshot",
   "Get a structured snapshot of the current page (title, URL, and visible text content)",
   {
@@ -273,6 +290,130 @@ server.tool(
   }
 );
 
+server.tool(
+  "browser_drag",
+  "Drag an element to another location",
+  {
+    session: z.string().describe("Session name"),
+    sourceSelector: z.string().describe("CSS selector for element to drag"),
+    targetSelector: z.string().describe("CSS selector for drop target"),
+    timeout: z.number().default(5000).describe("Timeout in milliseconds"),
+  },
+  async ({ session, sourceSelector, targetSelector, timeout }) => {
+    try {
+      const s = sessionManager.getOrThrow(session);
+      const t = timeout ?? 5000;
+      await s.page.dragAndDrop(sourceSelector, targetSelector, { timeout: t });
+      return success(`Dragged '${sourceSelector}' to '${targetSelector}'`);
+    } catch (e) {
+      return error((e as Error).message);
+    }
+  }
+);
+
+server.tool(
+  "browser_select_option",
+  "Select an option from a dropdown",
+  {
+    session: z.string().describe("Session name"),
+    selector: z.string().describe("CSS selector for the select element"),
+    value: z.string().optional().describe("Option value to select"),
+    label: z.string().optional().describe("Option label to select"),
+    index: z.number().optional().describe("Option index to select (0-based)"),
+    timeout: z.number().default(5000).describe("Timeout in milliseconds"),
+  },
+  async ({ session, selector, value, label, index, timeout }) => {
+    try {
+      const s = sessionManager.getOrThrow(session);
+      const t = timeout ?? 5000;
+      let selected: string[];
+      if (value !== undefined) {
+        selected = await s.page.selectOption(selector, { value }, { timeout: t });
+      } else if (label !== undefined) {
+        selected = await s.page.selectOption(selector, { label }, { timeout: t });
+      } else if (index !== undefined) {
+        selected = await s.page.selectOption(selector, { index }, { timeout: t });
+      } else {
+        return error("Must provide value, label, or index");
+      }
+      return success(`Selected option(s): ${selected.join(', ')}`);
+    } catch (e) {
+      return error((e as Error).message);
+    }
+  }
+);
+
+server.tool(
+  "browser_file_upload",
+  "Upload file(s) to a file input element",
+  {
+    session: z.string().describe("Session name"),
+    selector: z.string().describe("CSS selector for the file input"),
+    files: z.array(z.string()).describe("Array of file paths to upload"),
+    timeout: z.number().default(5000).describe("Timeout in milliseconds"),
+  },
+  async ({ session, selector, files, timeout }) => {
+    try {
+      const s = sessionManager.getOrThrow(session);
+      const t = timeout ?? 5000;
+      await s.page.setInputFiles(selector, files, { timeout: t });
+      return success(`Uploaded ${files.length} file(s) to '${selector}'`);
+    } catch (e) {
+      return error((e as Error).message);
+    }
+  }
+);
+
+server.tool(
+  "browser_fill_form",
+  "Fill multiple form fields at once",
+  {
+    session: z.string().describe("Session name"),
+    fields: z.array(z.object({
+      selector: z.string().describe("CSS selector for the input"),
+      value: z.string().describe("Value to fill"),
+    })).describe("Array of {selector, value} pairs"),
+    timeout: z.number().default(5000).describe("Timeout in milliseconds"),
+  },
+  async ({ session, fields, timeout }) => {
+    try {
+      const s = sessionManager.getOrThrow(session);
+      const t = timeout ?? 5000;
+      for (const field of fields) {
+        await s.page.fill(field.selector, field.value, { timeout: t });
+      }
+      return success(`Filled ${fields.length} form field(s)`);
+    } catch (e) {
+      return error((e as Error).message);
+    }
+  }
+);
+
+server.tool(
+  "browser_handle_dialog",
+  "Handle JavaScript dialogs (alert, confirm, prompt)",
+  {
+    session: z.string().describe("Session name"),
+    action: z.enum(["accept", "dismiss"]).describe("Whether to accept or dismiss the dialog"),
+    promptText: z.string().optional().describe("Text to enter for prompt dialogs"),
+  },
+  async ({ session, action, promptText }) => {
+    try {
+      const s = sessionManager.getOrThrow(session);
+      s.page.once('dialog', async (dialog) => {
+        if (action === 'accept') {
+          await dialog.accept(promptText);
+        } else {
+          await dialog.dismiss();
+        }
+      });
+      return success(`Dialog handler set to ${action}${promptText ? ` with text '${promptText}'` : ''}`);
+    } catch (e) {
+      return error((e as Error).message);
+    }
+  }
+);
+
 // Utility tools
 server.tool(
   "browser_wait_for",
@@ -313,6 +454,127 @@ server.tool(
       const s = sessionManager.getOrThrow(session);
       const result = await s.page.evaluate(script);
       return success(JSON.stringify(result, null, 2));
+    } catch (e) {
+      return error((e as Error).message);
+    }
+  }
+);
+
+server.tool(
+  "browser_resize",
+  "Resize the browser viewport",
+  {
+    session: z.string().describe("Session name"),
+    width: z.number().describe("Viewport width in pixels"),
+    height: z.number().describe("Viewport height in pixels"),
+  },
+  async ({ session, width, height }) => {
+    try {
+      const s = sessionManager.getOrThrow(session);
+      await s.page.setViewportSize({ width, height });
+      return success(`Resized viewport to ${width}x${height}`);
+    } catch (e) {
+      return error((e as Error).message);
+    }
+  }
+);
+
+server.tool(
+  "browser_console_messages",
+  "Get console messages from the page",
+  {
+    session: z.string().describe("Session name"),
+    clear: z.boolean().default(false).describe("Clear messages after retrieving"),
+  },
+  async ({ session, clear }) => {
+    try {
+      const s = sessionManager.getOrThrow(session);
+      const messages = [...s.consoleMessages];
+      if (clear) {
+        s.consoleMessages.length = 0;
+      }
+      if (messages.length === 0) {
+        return success("No console messages");
+      }
+      const lines = messages.map(m => `[${m.type}] ${m.text}`);
+      return success(`Console messages (${messages.length}):\n${lines.join('\n')}`);
+    } catch (e) {
+      return error((e as Error).message);
+    }
+  }
+);
+
+server.tool(
+  "browser_network_requests",
+  "Get network requests made by the page",
+  {
+    session: z.string().describe("Session name"),
+    clear: z.boolean().default(false).describe("Clear requests after retrieving"),
+  },
+  async ({ session, clear }) => {
+    try {
+      const s = sessionManager.getOrThrow(session);
+      const requests = [...s.networkRequests];
+      if (clear) {
+        s.networkRequests.length = 0;
+      }
+      if (requests.length === 0) {
+        return success("No network requests");
+      }
+      const lines = requests.map(r => `${r.method} ${r.url} ${r.status ?? 'pending'}`);
+      return success(`Network requests (${requests.length}):\n${lines.join('\n')}`);
+    } catch (e) {
+      return error((e as Error).message);
+    }
+  }
+);
+
+server.tool(
+  "browser_tabs",
+  "List or switch between tabs/pages in a session",
+  {
+    session: z.string().describe("Session name"),
+    action: z.enum(["list", "new", "switch", "close"]).default("list").describe("Action to perform"),
+    index: z.number().optional().describe("Tab index for switch/close actions (0-based)"),
+    url: z.string().optional().describe("URL to open in new tab"),
+  },
+  async ({ session, action, index, url }) => {
+    try {
+      const s = sessionManager.getOrThrow(session);
+      const pages = s.context.pages();
+      const act = action ?? 'list';
+
+      if (act === 'list') {
+        const tabs = pages.map((p, i) => `${i}: ${p.url()}`);
+        return success(`Tabs (${pages.length}):\n${tabs.join('\n')}`);
+      } else if (act === 'new') {
+        const newPage = await s.context.newPage();
+        if (url) {
+          await newPage.goto(url);
+        }
+        s.page = newPage;
+        return success(`Created new tab${url ? ` at ${url}` : ''}`);
+      } else if (act === 'switch') {
+        if (index === undefined || index < 0 || index >= pages.length) {
+          return error(`Invalid tab index. Valid range: 0-${pages.length - 1}`);
+        }
+        s.page = pages[index];
+        return success(`Switched to tab ${index}: ${s.page.url()}`);
+      } else if (act === 'close') {
+        if (pages.length === 1) {
+          return error("Cannot close the last tab");
+        }
+        const closeIndex = index ?? pages.indexOf(s.page);
+        if (closeIndex < 0 || closeIndex >= pages.length) {
+          return error(`Invalid tab index. Valid range: 0-${pages.length - 1}`);
+        }
+        await pages[closeIndex].close();
+        if (s.page === pages[closeIndex]) {
+          s.page = s.context.pages()[0];
+        }
+        return success(`Closed tab ${closeIndex}`);
+      }
+      return error(`Unknown action: ${act}`);
     } catch (e) {
       return error((e as Error).message);
     }

@@ -2,6 +2,19 @@ import type { Browser, BrowserContext, Page } from 'playwright';
 
 export type BrowserType = 'chromium' | 'firefox' | 'webkit' | 'camoufox';
 
+export interface ConsoleMessage {
+  type: string;
+  text: string;
+  timestamp: number;
+}
+
+export interface NetworkRequest {
+  url: string;
+  method: string;
+  status?: number;
+  timestamp: number;
+}
+
 export interface BrowserSession {
   name: string;
   type: BrowserType;
@@ -9,6 +22,8 @@ export interface BrowserSession {
   context: BrowserContext;
   page: Page;
   createdAt: Date;
+  consoleMessages: ConsoleMessage[];
+  networkRequests: NetworkRequest[];
 }
 
 export interface SessionInfo {
