@@ -4,7 +4,7 @@ import type { BrowserSession, BrowserType, SessionInfo } from './types.js';
 class SessionManager {
   private sessions: Map<string, BrowserSession> = new Map();
 
-  async create(name: string, type: BrowserType = 'chromium'): Promise<BrowserSession> {
+  async create(name: string, type: BrowserType = 'chromium', headless: boolean = true): Promise<BrowserSession> {
     if (this.sessions.has(name)) {
       throw new Error(`Session '${name}' already exists`);
     }
@@ -14,13 +14,13 @@ class SessionManager {
     let page: Page;
 
     if (type === 'chromium') {
-      browser = await chromium.launch({ headless: true });
+      browser = await chromium.launch({ headless });
       context = await browser.newContext();
       page = await context.newPage();
     } else if (type === 'camoufox') {
       // camoufox-js returns Browser by default (no user_data_dir)
       const { Camoufox } = await import('camoufox-js');
-      browser = await Camoufox({ headless: true }) as Browser;
+      browser = await Camoufox({ headless }) as Browser;
       context = await browser.newContext();
       page = await context.newPage();
     } else {
@@ -61,7 +61,7 @@ class SessionManager {
     this.sessions.delete(name);
     try {
       await session.context.close();
-      if (session.type === 'chromium' && 'close' in session.browser) {
+      if ('close' in session.browser) {
         await (session.browser as Browser).close();
       }
     } catch {

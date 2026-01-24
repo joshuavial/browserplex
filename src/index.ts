@@ -25,11 +25,14 @@ server.tool(
   {
     name: z.string().describe("Unique name for this browser session"),
     type: z.enum(["chromium", "camoufox"]).default("chromium").describe("Browser type: chromium (default) or camoufox (stealth)"),
+    headless: z.boolean().optional().describe("Run headless (default: true for chromium, false for camoufox)"),
   },
-  async ({ name, type }) => {
+  async ({ name, type, headless }) => {
     try {
-      const session = await sessionManager.create(name, type);
-      return success(`Created ${type} session '${name}'`);
+      // Default: chromium headless, camoufox headed (for manual interaction)
+      const useHeadless = headless ?? (type === 'chromium');
+      const session = await sessionManager.create(name, type, useHeadless);
+      return success(`Created ${type} session '${name}'${useHeadless ? '' : ' (headed)'}`);
     } catch (e) {
       return error((e as Error).message);
     }
