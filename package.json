@@ -1,19 +1,49 @@
 {
   "name": "browserplex",
   "version": "0.1.0",
-  "description": "Browser Broker MCP - multiple named browser sessions",
+  "description": "MCP server for managing multiple named browser sessions with Playwright",
   "type": "module",
   "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "bin": {
     "browserplex": "./dist/index.js"
   },
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:unit": "vitest run src/__tests__/sessions.test.ts",
-    "test:integration": "vitest run src/__tests__/integration.test.ts"
+    "test:integration": "vitest run src/__tests__/integration.test.ts",
+    "prepublishOnly": "npm run build && npm test"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "browser",
+    "playwright",
+    "webkit",
+    "chromium",
+    "automation",
+    "claude",
+    "llm"
+  ],
+  "author": "Joshua Vial",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/joshuavial/browserplex.git"
+  },
+  "bugs": {
+    "url": "https://github.com/joshuavial/browserplex/issues"
+  },
+  "homepage": "https://github.com/joshuavial/browserplex#readme",
+  "engines": {
+    "node": ">=18.0.0"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.11.0",
