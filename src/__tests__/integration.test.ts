@@ -273,6 +273,287 @@ describe('MCP Server Integration', () => {
     });
   });
 
+  describe('Navigate Back', () => {
+    it('navigates back in history', async () => {
+      // First navigate to example.com
+      await toolCall('browser_navigate', {
+        session: 'integration-test',
+        url: 'https://example.com',
+      });
+
+      // Then navigate to another page
+      await toolCall('browser_navigate', {
+        session: 'integration-test',
+        url: 'https://example.org',
+      });
+
+      // Now go back
+      const result = await toolCall('browser_navigate_back', {
+        session: 'integration-test',
+      });
+
+      expect(getTextContent(result)).toContain('Navigated back');
+    });
+  });
+
+  describe('Resize', () => {
+    it('resizes the viewport', async () => {
+      const result = await toolCall('browser_resize', {
+        session: 'integration-test',
+        width: 1024,
+        height: 768,
+      });
+
+      expect(getTextContent(result)).toBe('Resized viewport to 1024x768');
+    });
+  });
+
+  describe('Console Messages', () => {
+    it('captures console messages', async () => {
+      // Execute some JS that logs to console
+      await toolCall('browser_evaluate', {
+        session: 'integration-test',
+        script: 'console.log("test message from browserplex")',
+      });
+
+      const result = await toolCall('browser_console_messages', {
+        session: 'integration-test',
+      });
+
+      expect(getTextContent(result)).toContain('test message from browserplex');
+    });
+
+    it('clears console messages when requested', async () => {
+      await toolCall('browser_console_messages', {
+        session: 'integration-test',
+        clear: true,
+      });
+
+      const result = await toolCall('browser_console_messages', {
+        session: 'integration-test',
+      });
+
+      expect(getTextContent(result)).toBe('No console messages');
+    });
+  });
+
+  describe('Network Requests', () => {
+    it('captures network requests', async () => {
+      // Navigate to trigger network requests
+      await toolCall('browser_navigate', {
+        session: 'integration-test',
+        url: 'https://example.com',
+      });
+
+      const result = await toolCall('browser_network_requests', {
+        session: 'integration-test',
+      });
+
+      expect(getTextContent(result)).toContain('example.com');
+      expect(getTextContent(result)).toContain('GET');
+    });
+
+    it('clears network requests when requested', async () => {
+      await toolCall('browser_network_requests', {
+        session: 'integration-test',
+        clear: true,
+      });
+
+      const result = await toolCall('browser_network_requests', {
+        session: 'integration-test',
+      });
+
+      expect(getTextContent(result)).toBe('No network requests');
+    });
+  });
+
+  describe('Tabs', () => {
+    it('lists tabs', async () => {
+      const result = await toolCall('browser_tabs', {
+        session: 'integration-test',
+        action: 'list',
+      });
+
+      expect(getTextContent(result)).toContain('Tabs (1)');
+    });
+
+    it('creates a new tab', async () => {
+      const result = await toolCall('browser_tabs', {
+        session: 'integration-test',
+        action: 'new',
+        url: 'https://example.org',
+      });
+
+      expect(getTextContent(result)).toContain('Created new tab');
+    });
+
+    it('lists multiple tabs', async () => {
+      const result = await toolCall('browser_tabs', {
+        session: 'integration-test',
+        action: 'list',
+      });
+
+      expect(getTextContent(result)).toContain('Tabs (2)');
+    });
+
+    it('switches tabs', async () => {
+      const result = await toolCall('browser_tabs', {
+        session: 'integration-test',
+        action: 'switch',
+        index: 0,
+      });
+
+      expect(getTextContent(result)).toContain('Switched to tab 0');
+    });
+
+    it('closes a tab', async () => {
+      const result = await toolCall('browser_tabs', {
+        session: 'integration-test',
+        action: 'close',
+        index: 1,
+      });
+
+      expect(getTextContent(result)).toBe('Closed tab 1');
+    });
+  });
+
+  describe('Select Option', () => {
+    it('selects an option by index', async () => {
+      // Navigate to a page and inject a select element
+      await toolCall('browser_navigate', {
+        session: 'integration-test',
+        url: 'https://example.com',
+      });
+
+      await toolCall('browser_evaluate', {
+        session: 'integration-test',
+        script: `
+          const select = document.createElement('select');
+          select.id = 'test-select';
+          select.innerHTML = '<option value="a">Option A</option><option value="b">Option B</option>';
+          document.body.appendChild(select);
+        `,
+      });
+
+      const result = await toolCall('browser_select_option', {
+        session: 'integration-test',
+        selector: '#test-select',
+        index: 1,
+      });
+
+      expect(getTextContent(result)).toContain('Selected option');
+    });
+
+    it('selects an option by value', async () => {
+      const result = await toolCall('browser_select_option', {
+        session: 'integration-test',
+        selector: '#test-select',
+        value: 'a',
+      });
+
+      expect(getTextContent(result)).toContain('Selected option');
+    });
+  });
+
+  describe('Fill Form', () => {
+    it('fills multiple form fields', async () => {
+      // Inject form fields
+      await toolCall('browser_evaluate', {
+        session: 'integration-test',
+        script: `
+          const form = document.createElement('form');
+          form.innerHTML = '<input id="field1" type="text"><input id="field2" type="text">';
+          document.body.appendChild(form);
+        `,
+      });
+
+      const result = await toolCall('browser_fill_form', {
+        session: 'integration-test',
+        fields: [
+          { selector: '#field1', value: 'value1' },
+          { selector: '#field2', value: 'value2' },
+        ],
+      });
+
+      expect(getTextContent(result)).toBe('Filled 2 form field(s)');
+    });
+  });
+
+  describe('File Upload', () => {
+    it('handles file upload selector', async () => {
+      // Inject file input
+      await toolCall('browser_evaluate', {
+        session: 'integration-test',
+        script: `
+          const input = document.createElement('input');
+          input.type = 'file';
+          input.id = 'file-input';
+          document.body.appendChild(input);
+        `,
+      });
+
+      // Note: We can't actually upload a file in tests without a real file path
+      // but we can test the error handling
+      const result = await toolCall('browser_file_upload', {
+        session: 'integration-test',
+        selector: '#file-input',
+        files: ['/nonexistent/file.txt'],
+      });
+
+      // Should error because file doesn't exist
+      expect(result.isError).toBe(true);
+    });
+  });
+
+  describe('Drag and Drop', () => {
+    it('attempts drag and drop', async () => {
+      // Inject draggable elements
+      await toolCall('browser_evaluate', {
+        session: 'integration-test',
+        script: `
+          const source = document.createElement('div');
+          source.id = 'drag-source';
+          source.draggable = true;
+          source.textContent = 'Drag me';
+          const target = document.createElement('div');
+          target.id = 'drag-target';
+          target.textContent = 'Drop here';
+          document.body.appendChild(source);
+          document.body.appendChild(target);
+        `,
+      });
+
+      const result = await toolCall('browser_drag', {
+        session: 'integration-test',
+        sourceSelector: '#drag-source',
+        targetSelector: '#drag-target',
+      });
+
+      expect(getTextContent(result)).toContain('Dragged');
+    });
+  });
+
+  describe('Handle Dialog', () => {
+    it('sets up dialog handler', async () => {
+      const result = await toolCall('browser_handle_dialog', {
+        session: 'integration-test',
+        action: 'accept',
+      });
+
+      expect(getTextContent(result)).toBe('Dialog handler set to accept');
+    });
+
+    it('sets up dialog handler with prompt text', async () => {
+      const result = await toolCall('browser_handle_dialog', {
+        session: 'integration-test',
+        action: 'accept',
+        promptText: 'test input',
+      });
+
+      expect(getTextContent(result)).toBe("Dialog handler set to accept with text 'test input'");
+    });
+  });
+
   describe('Session Cleanup', () => {
     it('destroys the session', async () => {
       const result = await toolCall('session_destroy', {
