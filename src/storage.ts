@@ -7,6 +7,12 @@ import type { StoredSession, LockInfo } from './types.js';
 const SESSIONS_DIR = path.join(os.homedir(), '.browserplex', 'sessions');
 const LOCK_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 
+// Sanitize names to prevent path traversal attacks
+function sanitizeName(name: string): string {
+  // Remove path separators and parent directory references
+  return name.replace(/[/\\]/g, '_').replace(/\.\./g, '_');
+}
+
 class StorageManager {
   /**
    * Ensure the sessions directory structure exists
@@ -19,14 +25,14 @@ class StorageManager {
    * Get the path for a stored session file
    */
   private getSessionPath(domain: string, name: string): string {
-    return path.join(SESSIONS_DIR, domain, `${name}.json`);
+    return path.join(SESSIONS_DIR, sanitizeName(domain), `${sanitizeName(name)}.json`);
   }
 
   /**
    * Get the path for a domain lock file
    */
   private getLockPath(domain: string): string {
-    return path.join(SESSIONS_DIR, domain, '.lock');
+    return path.join(SESSIONS_DIR, sanitizeName(domain), '.lock');
   }
 
   /**
