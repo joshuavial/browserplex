@@ -88,6 +88,7 @@ class SessionManager {
       createdAt: new Date(),
       consoleMessages,
       networkRequests,
+      refMap: {},
     };
 
     this.sessions.set(name, session);

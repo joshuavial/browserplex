@@ -3,8 +3,11 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import sharp from "sharp";
+import type { Locator } from "playwright";
 import { sessionManager } from "./sessions.js";
 import { storageManager } from "./storage.js";
+import { getEnhancedSnapshot, getLocatorFromRef, isRef, getSnapshotStats } from "./snapshot.js";
+import type { BrowserSession } from "./types.js";
 
 const server = new McpServer({
   name: "browserplex",
@@ -18,6 +21,43 @@ function success(text: string) {
 
 function error(message: string) {
   return { content: [{ type: "text" as const, text: `Error: ${message}` }], isError: true };
+}
+
+/**
+ * Get a Playwright locator from a ref (@e1) or CSS selector.
+ * Refs are looked up in the session's refMap from the last snapshot.
+ */
+function getLocator(session: BrowserSession, selector: string): Locator {
+  if (isRef(selector)) {
+    const locator = getLocatorFromRef(session.page, session.refMap, selector);
+    if (!locator) {
+      throw new Error(`Ref '${selector}' not found. Run browser_snapshot first to get current refs.`);
+    }
+    return locator;
+  }
+  return session.page.locator(selector);
+}
+
+/**
+ * Convert Playwright errors to AI-friendly messages with actionable guidance.
+ */
+function toAIFriendlyError(e: unknown, selector: string): string {
+  const message = e instanceof Error ? e.message : String(e);
+
+  if (message.includes('strict mode violation')) {
+    return `Selector "${selector}" matched multiple elements. Use browser_snapshot to get specific refs, or use a more specific CSS selector.`;
+  }
+  if (message.includes('intercepts pointer events')) {
+    return `Element "${selector}" is blocked by another element (likely a modal or overlay). Try dismissing any modals/cookie banners first.`;
+  }
+  if (message.includes('not visible') || message.includes('element is not visible')) {
+    return `Element "${selector}" is not visible. Try scrolling it into view or check if it's hidden.`;
+  }
+  if (message.includes('Timeout')) {
+    return `Timeout waiting for "${selector}". The element may not exist or may be slow to appear. Try increasing timeout or check the selector.`;
+  }
+
+  return message;
 }
 
 // Session management tools
@@ -235,53 +275,38 @@ server.tool(
 
 server.tool(
   "browser_snapshot",
-  "Get a structured snapshot of the current page (title, URL, and visible text content)",
+  "Get an accessibility tree snapshot with element refs for interaction. Use refs (@e1, @e2) with click/type tools instead of CSS selectors for more reliable automation.",
   {
     session: z.string().describe("Session name"),
+    interactive: z.boolean().default(false).describe("Only show interactive elements (buttons, links, inputs) - much smaller output"),
+    compact: z.boolean().default(false).describe("Remove empty structural elements"),
+    maxDepth: z.number().optional().describe("Maximum tree depth (0 = root only)"),
+    selector: z.string().optional().describe("CSS selector to scope the snapshot to a specific element"),
   },
-  async ({ session }) => {
+  async ({ session, interactive, compact, maxDepth, selector }) => {
     try {
       const s = sessionManager.getOrThrow(session);
       const title = await s.page.title();
       const url = s.page.url();
-      // Get visible text content
-      const content = await s.page.evaluate(() => {
-        const walk = (node: Node): string => {
-          if (node.nodeType === Node.TEXT_NODE) {
-            return node.textContent?.trim() || '';
-          }
-          if (node.nodeType !== Node.ELEMENT_NODE) return '';
-          const el = node as Element;
-          const tag = el.tagName.toLowerCase();
-          // Skip hidden elements and scripts
-          if (tag === 'script' || tag === 'style' || tag === 'noscript') return '';
-          const style = window.getComputedStyle(el);
-          if (style.display === 'none' || style.visibility === 'hidden') return '';
 
-          const children = Array.from(node.childNodes).map(walk).filter(Boolean);
-          const text = children.join(' ');
-
-          // Add structure for semantic elements
-          if (['h1','h2','h3','h4','h5','h6'].includes(tag)) {
-            return `[${tag.toUpperCase()}] ${text}`;
-          }
-          if (tag === 'a' && el.getAttribute('href')) {
-            return `[link: ${text}]`;
-          }
-          if (tag === 'button' || el.getAttribute('role') === 'button') {
-            return `[button: ${text}]`;
-          }
-          if (tag === 'input') {
-            const type = el.getAttribute('type') || 'text';
-            const label = el.getAttribute('placeholder') || el.getAttribute('aria-label') || '';
-            return `[input:${type} ${label}]`;
-          }
-          return text;
-        };
-        return walk(document.body);
+      const snapshot = await getEnhancedSnapshot(s.page, {
+        interactive: interactive ?? false,
+        compact: compact ?? false,
+        maxDepth,
+        selector,
       });
 
-      return success(`Title: ${title}\nURL: ${url}\n\n${content}`);
+      // Store refs in session for later use with click/type/etc
+      s.refMap = snapshot.refs;
+
+      const stats = getSnapshotStats(snapshot.tree, snapshot.refs);
+
+      return success(
+        `Page: ${title}\nURL: ${url}\n` +
+        `Stats: ${stats.refs} refs, ${stats.interactive} interactive, ~${stats.tokens} tokens\n\n` +
+        `${snapshot.tree}\n\n` +
+        `Use refs like @e1, @e2 with browser_click, browser_type, etc.`
+      );
     } catch (e) {
       return error((e as Error).message);
     }
@@ -334,30 +359,31 @@ server.tool(
 // Interaction tools
 server.tool(
   "browser_click",
-  "Click an element on the page",
+  "Click an element on the page. Use refs (@e1, @e2) from browser_snapshot or CSS selectors.",
   {
     session: z.string().describe("Session name"),
-    selector: z.string().describe("CSS selector or text to click"),
+    selector: z.string().describe("Element ref (@e1) or CSS selector to click"),
     timeout: z.number().default(5000).describe("Timeout in milliseconds"),
   },
   async ({ session, selector, timeout }) => {
     try {
       const s = sessionManager.getOrThrow(session);
       const t = timeout ?? 5000;
-      await s.page.click(selector, { timeout: t });
+      const locator = getLocator(s, selector);
+      await locator.click({ timeout: t });
       return success(`Clicked '${selector}'`);
     } catch (e) {
-      return error((e as Error).message);
+      return error(toAIFriendlyError(e, selector));
     }
   }
 );
 
 server.tool(
   "browser_type",
-  "Type text into an input element",
+  "Type text into an input element. Use refs (@e1, @e2) from browser_snapshot or CSS selectors.",
   {
     session: z.string().describe("Session name"),
-    selector: z.string().describe("CSS selector for the input"),
+    selector: z.string().describe("Element ref (@e3) or CSS selector for the input"),
     text: z.string().describe("Text to type"),
     submit: z.boolean().default(false).describe("Press Enter after typing"),
     timeout: z.number().default(5000).describe("Timeout in milliseconds"),
@@ -366,13 +392,14 @@ server.tool(
     try {
       const s = sessionManager.getOrThrow(session);
       const t = timeout ?? 5000;
-      await s.page.fill(selector, text, { timeout: t });
+      const locator = getLocator(s, selector);
+      await locator.fill(text, { timeout: t });
       if (submit) {
-        await s.page.press(selector, "Enter", { timeout: t });
+        await locator.press("Enter", { timeout: t });
       }
       return success(`Typed into '${selector}'${submit ? " and submitted" : ""}`);
     } catch (e) {
-      return error((e as Error).message);
+      return error(toAIFriendlyError(e, selector));
     }
   }
 );
@@ -397,51 +424,54 @@ server.tool(
 
 server.tool(
   "browser_hover",
-  "Hover over an element",
+  "Hover over an element. Use refs (@e1, @e2) from browser_snapshot or CSS selectors.",
   {
     session: z.string().describe("Session name"),
-    selector: z.string().describe("CSS selector to hover over"),
+    selector: z.string().describe("Element ref (@e1) or CSS selector to hover over"),
     timeout: z.number().default(5000).describe("Timeout in milliseconds"),
   },
   async ({ session, selector, timeout }) => {
     try {
       const s = sessionManager.getOrThrow(session);
       const t = timeout ?? 5000;
-      await s.page.hover(selector, { timeout: t });
+      const locator = getLocator(s, selector);
+      await locator.hover({ timeout: t });
       return success(`Hovering over '${selector}'`);
     } catch (e) {
-      return error((e as Error).message);
+      return error(toAIFriendlyError(e, selector));
     }
   }
 );
 
 server.tool(
   "browser_drag",
-  "Drag an element to another location",
+  "Drag an element to another location. Use refs (@e1, @e2) from browser_snapshot or CSS selectors.",
   {
     session: z.string().describe("Session name"),
-    sourceSelector: z.string().describe("CSS selector for element to drag"),
-    targetSelector: z.string().describe("CSS selector for drop target"),
+    sourceSelector: z.string().describe("Element ref or CSS selector for element to drag"),
+    targetSelector: z.string().describe("Element ref or CSS selector for drop target"),
     timeout: z.number().default(5000).describe("Timeout in milliseconds"),
   },
   async ({ session, sourceSelector, targetSelector, timeout }) => {
     try {
       const s = sessionManager.getOrThrow(session);
       const t = timeout ?? 5000;
-      await s.page.dragAndDrop(sourceSelector, targetSelector, { timeout: t });
+      const sourceLocator = getLocator(s, sourceSelector);
+      const targetLocator = getLocator(s, targetSelector);
+      await sourceLocator.dragTo(targetLocator, { timeout: t });
       return success(`Dragged '${sourceSelector}' to '${targetSelector}'`);
     } catch (e) {
-      return error((e as Error).message);
+      return error(toAIFriendlyError(e, sourceSelector));
     }
   }
 );
 
 server.tool(
   "browser_select_option",
-  "Select an option from a dropdown",
+  "Select an option from a dropdown. Use refs (@e1) from browser_snapshot or CSS selectors.",
   {
     session: z.string().describe("Session name"),
-    selector: z.string().describe("CSS selector for the select element"),
+    selector: z.string().describe("Element ref or CSS selector for the select element"),
     value: z.string().optional().describe("Option value to select"),
     label: z.string().optional().describe("Option label to select"),
     index: z.number().optional().describe("Option index to select (0-based)"),
@@ -451,29 +481,30 @@ server.tool(
     try {
       const s = sessionManager.getOrThrow(session);
       const t = timeout ?? 5000;
+      const locator = getLocator(s, selector);
       let selected: string[];
       if (value !== undefined) {
-        selected = await s.page.selectOption(selector, { value }, { timeout: t });
+        selected = await locator.selectOption({ value }, { timeout: t });
       } else if (label !== undefined) {
-        selected = await s.page.selectOption(selector, { label }, { timeout: t });
+        selected = await locator.selectOption({ label }, { timeout: t });
       } else if (index !== undefined) {
-        selected = await s.page.selectOption(selector, { index }, { timeout: t });
+        selected = await locator.selectOption({ index }, { timeout: t });
       } else {
         return error("Must provide value, label, or index");
       }
       return success(`Selected option(s): ${selected.join(', ')}`);
     } catch (e) {
-      return error((e as Error).message);
+      return error(toAIFriendlyError(e, selector));
     }
   }
 );
 
 server.tool(
   "browser_file_upload",
-  "Upload file(s) to a file input element",
+  "Upload file(s) to a file input element. Use refs (@e1) from browser_snapshot or CSS selectors.",
   {
     session: z.string().describe("Session name"),
-    selector: z.string().describe("CSS selector for the file input"),
+    selector: z.string().describe("Element ref or CSS selector for the file input"),
     files: z.array(z.string()).describe("Array of file paths to upload"),
     timeout: z.number().default(5000).describe("Timeout in milliseconds"),
   },
@@ -481,21 +512,22 @@ server.tool(
     try {
       const s = sessionManager.getOrThrow(session);
       const t = timeout ?? 5000;
-      await s.page.setInputFiles(selector, files, { timeout: t });
+      const locator = getLocator(s, selector);
+      await locator.setInputFiles(files, { timeout: t });
       return success(`Uploaded ${files.length} file(s) to '${selector}'`);
     } catch (e) {
-      return error((e as Error).message);
+      return error(toAIFriendlyError(e, selector));
     }
   }
 );
 
 server.tool(
   "browser_fill_form",
-  "Fill multiple form fields at once",
+  "Fill multiple form fields at once. Use refs (@e1, @e2) from browser_snapshot or CSS selectors.",
   {
     session: z.string().describe("Session name"),
     fields: z.array(z.object({
-      selector: z.string().describe("CSS selector for the input"),
+      selector: z.string().describe("Element ref or CSS selector for the input"),
       value: z.string().describe("Value to fill"),
     })).describe("Array of {selector, value} pairs"),
     timeout: z.number().default(5000).describe("Timeout in milliseconds"),
@@ -505,7 +537,8 @@ server.tool(
       const s = sessionManager.getOrThrow(session);
       const t = timeout ?? 5000;
       for (const field of fields) {
-        await s.page.fill(field.selector, field.value, { timeout: t });
+        const locator = getLocator(s, field.selector);
+        await locator.fill(field.value, { timeout: t });
       }
       return success(`Filled ${fields.length} form field(s)`);
     } catch (e) {
@@ -542,10 +575,10 @@ server.tool(
 // Utility tools
 server.tool(
   "browser_wait_for",
-  "Wait for an element or condition",
+  "Wait for an element or condition. Use refs (@e1) from browser_snapshot or CSS selectors.",
   {
     session: z.string().describe("Session name"),
-    selector: z.string().optional().describe("CSS selector to wait for"),
+    selector: z.string().optional().describe("Element ref or CSS selector to wait for"),
     state: z.enum(["attached", "detached", "visible", "hidden"]).default("visible").describe("State to wait for"),
     timeout: z.number().default(30000).describe("Timeout in milliseconds"),
   },
@@ -555,14 +588,15 @@ server.tool(
       const waitState = state ?? 'visible';
       const t = timeout ?? 30000;
       if (selector) {
-        await s.page.waitForSelector(selector, { state: waitState, timeout: t });
+        const locator = getLocator(s, selector);
+        await locator.waitFor({ state: waitState, timeout: t });
         return success(`Element '${selector}' is ${waitState}`);
       } else {
         await s.page.waitForLoadState("networkidle", { timeout: t });
         return success("Page load complete");
       }
     } catch (e) {
-      return error((e as Error).message);
+      return error(toAIFriendlyError(e, selector ?? 'page'));
     }
   }
 );

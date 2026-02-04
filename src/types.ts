@@ -15,6 +15,19 @@ export interface NetworkRequest {
   timestamp: number;
 }
 
+/**
+ * Ref map for element references from ARIA snapshots.
+ * Derived from agent-browser by Vercel Inc. (Apache 2.0)
+ */
+export interface RefMap {
+  [ref: string]: {
+    role: string;
+    name?: string;
+    /** Index for disambiguation when multiple elements have same role+name */
+    nth?: number;
+  };
+}
+
 export interface BrowserSession {
   name: string;
   type: BrowserType;
@@ -24,6 +37,8 @@ export interface BrowserSession {
   createdAt: Date;
   consoleMessages: ConsoleMessage[];
   networkRequests: NetworkRequest[];
+  /** Cached refs from last snapshot */
+  refMap: RefMap;
 }
 
 export interface SessionInfo {

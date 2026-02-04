@@ -113,9 +113,11 @@ describe('MCP Server Integration', () => {
       });
       const text = getTextContent(result);
 
-      expect(text).toContain('Title: Example Domain');
+      // ARIA snapshot format
+      expect(text).toContain('Page: Example Domain');
       expect(text).toContain('URL: https://example.com');
-      expect(text).toContain('Example Domain');
+      expect(text).toContain('heading "Example Domain"');
+      expect(text).toContain('[ref=');  // Should have refs
     });
 
     it('fails to navigate nonexistent session', async () => {
