@@ -5,6 +5,10 @@ class SessionManager {
   private sessions: Map<string, BrowserSession> = new Map();
 
   async create(name: string, type: BrowserType = 'chromium', headless: boolean = true): Promise<BrowserSession> {
+    return this.createWithStorage(name, type, headless, undefined);
+  }
+
+  async createWithStorage(name: string, type: BrowserType = 'chromium', headless: boolean = true, storageState?: object): Promise<BrowserSession> {
     if (this.sessions.has(name)) {
       throw new Error(`Session '${name}' already exists`);
     }
@@ -13,23 +17,27 @@ class SessionManager {
     let context: BrowserContext;
     let page: Page;
 
+    // Context options with optional storage state
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const contextOptions = storageState ? { storageState: storageState as any } : {};
+
     if (type === 'chromium') {
       browser = await chromium.launch({ headless });
-      context = await browser.newContext();
+      context = await browser.newContext(contextOptions);
       page = await context.newPage();
     } else if (type === 'firefox') {
       browser = await firefox.launch({ headless });
-      context = await browser.newContext();
+      context = await browser.newContext(contextOptions);
       page = await context.newPage();
     } else if (type === 'webkit') {
       browser = await webkit.launch({ headless });
-      context = await browser.newContext();
+      context = await browser.newContext(contextOptions);
       page = await context.newPage();
     } else if (type === 'camoufox') {
       // camoufox-js returns Browser by default (no user_data_dir)
       const { Camoufox } = await import('camoufox-js');
       browser = await Camoufox({ headless }) as Browser;
-      context = await browser.newContext();
+      context = await browser.newContext(contextOptions);
       page = await context.newPage();
     } else {
       throw new Error(`Unknown browser type: ${type}`);

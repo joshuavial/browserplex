@@ -32,3 +32,16 @@ export interface SessionInfo {
   url: string;
   createdAt: string;
 }
+
+export interface StoredSession {
+  domain: string;
+  name: string;
+  path: string;
+  modifiedAt: string;
+}
+
+export interface LockInfo {
+  domain: string;
+  acquiredAt: number;
+  pid: number;
+}

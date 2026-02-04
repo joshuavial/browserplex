@@ -4,6 +4,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import sharp from "sharp";
 import { sessionManager } from "./sessions.js";
+import { storageManager } from "./storage.js";
 
 const server = new McpServer({
   name: "browserplex",
@@ -66,6 +67,130 @@ server.tool(
     try {
       await sessionManager.destroy(name);
       return success(`Destroyed session '${name}'`);
+    } catch (e) {
+      return error((e as Error).message);
+    }
+  }
+);
+
+// Storage tools - persistent session state across browser instances
+server.tool(
+  "storage_save",
+  "Save browser session cookies/storage to a named file for later reuse",
+  {
+    session: z.string().describe("Session name"),
+    domain: z.string().describe("Domain to associate with this storage (e.g., 'linkedin.com')"),
+    name: z.string().default("default").describe("Name for this stored session (e.g., 'work', 'personal')"),
+  },
+  async ({ session, domain, name }) => {
+    try {
+      const s = sessionManager.getOrThrow(session);
+      const storageName = name ?? 'default';
+      const savedPath = await storageManager.save(s.context, domain, storageName);
+      return success(`Saved session '${storageName}' for ${domain}`);
+    } catch (e) {
+      return error((e as Error).message);
+    }
+  }
+);
+
+server.tool(
+  "storage_load",
+  "Load stored session cookies/storage into a new browser session",
+  {
+    name: z.string().describe("Name for the new browser session"),
+    domain: z.string().describe("Domain to load storage from"),
+    storageName: z.string().default("default").describe("Name of the stored session to load"),
+    type: z.enum(["chromium", "firefox", "webkit", "camoufox"]).default("chromium").describe("Browser type"),
+    headless: z.boolean().optional().describe("Run headless (default: true for chromium, false for camoufox)"),
+  },
+  async ({ name, domain, storageName, type, headless }) => {
+    try {
+      const browserType = type ?? 'chromium';
+      const storage = storageName ?? 'default';
+
+      // Load storage state
+      const storageState = await storageManager.load(domain, storage);
+
+      // Create session with the loaded storage state
+      const useHeadless = headless ?? (browserType === 'chromium');
+      const session = await sessionManager.createWithStorage(name, browserType, useHeadless, storageState);
+
+      return success(`Created ${browserType} session '${name}' with stored session '${storage}' for ${domain}`);
+    } catch (e) {
+      return error((e as Error).message);
+    }
+  }
+);
+
+server.tool(
+  "storage_list",
+  "List all stored browser sessions",
+  {
+    domain: z.string().optional().describe("Filter by domain (optional)"),
+  },
+  async ({ domain }) => {
+    try {
+      const sessions = await storageManager.list(domain);
+      if (sessions.length === 0) {
+        return success(domain ? `No stored sessions for ${domain}` : "No stored sessions");
+      }
+      const lines = sessions.map(s => `- ${s.domain}/${s.name} (modified: ${s.modifiedAt})`);
+      return success(`Stored sessions:\n${lines.join("\n")}`);
+    } catch (e) {
+      return error((e as Error).message);
+    }
+  }
+);
+
+server.tool(
+  "storage_delete",
+  "Delete a stored browser session",
+  {
+    domain: z.string().describe("Domain of the stored session"),
+    name: z.string().default("default").describe("Name of the stored session"),
+  },
+  async ({ domain, name }) => {
+    try {
+      const storageName = name ?? 'default';
+      await storageManager.delete(domain, storageName);
+      return success(`Deleted stored session '${storageName}' for ${domain}`);
+    } catch (e) {
+      return error((e as Error).message);
+    }
+  }
+);
+
+server.tool(
+  "storage_lock",
+  "Acquire a lock for a domain (use during auth flows to prevent concurrent logins)",
+  {
+    domain: z.string().describe("Domain to lock"),
+  },
+  async ({ domain }) => {
+    try {
+      const acquired = await storageManager.acquireLock(domain);
+      if (acquired) {
+        return success(`Acquired lock for ${domain}`);
+      } else {
+        return error(`Failed to acquire lock for ${domain} - another process holds it`);
+      }
+    } catch (e) {
+      return error((e as Error).message);
+    }
+  }
+);
+
+server.tool(
+  "storage_unlock",
+  "Release a lock for a domain",
+  {
+    domain: z.string().describe("Domain to unlock"),
+  },
+  async ({ domain }) => {
+    try {
+      await storageManager.releaseLock(domain);
+      return success(`Released lock for ${domain}`);
     } catch (e) {
       return error((e as Error).message);
     }
