@@ -97,10 +97,10 @@ class StorageManager {
       return sessions;
     }
 
-    const domains = domain ? [domain] : await fs.readdir(SESSIONS_DIR);
+    const domains = domain ? [sanitizeName(domain)] : await fs.readdir(SESSIONS_DIR);
 
     for (const d of domains) {
-      const domainPath = path.join(SESSIONS_DIR, d);
+      const domainPath = path.join(SESSIONS_DIR, sanitizeName(d));
 
       try {
         const stat = await fs.stat(domainPath);
