@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.2.0] - 2026-02-05
 
 ### Added
 - ARIA snapshot with refs for 10x token reduction in browser automation
