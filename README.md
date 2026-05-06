@@ -67,7 +67,7 @@ npm run build
 | `browser_navigate` | Navigate to a URL |
 | `browser_navigate_back` | Go back in browser history |
 | `browser_snapshot` | Get page title, URL, and visible text content |
-| `browser_take_screenshot` | Capture screenshot (auto-resized for LLM context) |
+| `browser_take_screenshot` | Capture screenshot (auto-resized for LLM context; optional `savePath` writes the un-resized PNG to disk) |
 
 ### Interaction
 

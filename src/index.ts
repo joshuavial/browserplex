@@ -3,6 +3,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import sharp from "sharp";
+import { promises as fs } from "node:fs";
 import type { Locator } from "playwright";
 import { sessionManager } from "./sessions.js";
 import { storageManager } from "./storage.js";
@@ -11,7 +12,7 @@ import type { BrowserSession } from "./types.js";
 
 const server = new McpServer({
   name: "browserplex",
-  version: "0.1.0",
+  version: "0.3.0",
 });
 
 // Helper to format tool results
@@ -315,16 +316,25 @@ server.tool(
 
 server.tool(
   "browser_take_screenshot",
-  "Take a screenshot of the current page (auto-resized to fit LLM limits)",
+  "Take a screenshot of the current page (auto-resized to fit LLM limits). Optionally save the original (un-resized) PNG to disk via savePath.",
   {
     session: z.string().describe("Session name"),
     fullPage: z.boolean().default(false).describe("Capture full scrollable page"),
     maxDimension: z.number().default(1280).describe("Max width/height in pixels (default 1280, safe for LLM context)"),
+    savePath: z.string().optional().describe("Absolute path to write the original (un-resized) PNG. Parent directory must already exist. When set, the response includes a text confirmation alongside the (resized) image."),
   },
-  async ({ session, fullPage, maxDimension }) => {
+  async ({ session, fullPage, maxDimension, savePath }) => {
     try {
+      if (savePath !== undefined && !savePath.startsWith("/")) {
+        return error("savePath must be an absolute path");
+      }
+
       const s = sessionManager.getOrThrow(session);
       const rawBuffer = await s.page.screenshot({ fullPage });
+
+      if (savePath) {
+        await fs.writeFile(savePath, rawBuffer);
+      }
 
       // Resize if needed to stay within LLM image limits
       // Note: Zod defaults don't apply via MCP SDK, so we must apply explicitly
@@ -343,13 +353,15 @@ server.tool(
       }
 
       const base64 = buffer.toString("base64");
-      return {
-        content: [{
-          type: "image" as const,
-          data: base64,
-          mimeType: "image/png",
-        }],
-      };
+      const content: Array<
+        | { type: "text"; text: string }
+        | { type: "image"; data: string; mimeType: string }
+      > = [];
+      if (savePath) {
+        content.push({ type: "text" as const, text: `Saved screenshot to ${savePath}` });
+      }
+      content.push({ type: "image" as const, data: base64, mimeType: "image/png" });
+      return { content };
     } catch (e) {
       return error((e as Error).message);
     }

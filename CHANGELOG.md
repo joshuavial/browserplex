@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.3.0] - 2026-05-06
+
+### Added
+- `savePath` option on `browser_take_screenshot` writes the original (un-resized) PNG to disk while still returning the resized image to the caller. Parent directory must exist; absolute paths only.
+
 ## [0.2.0] - 2026-02-05
 
 ### Added

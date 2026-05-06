@@ -151,6 +151,43 @@ describe('MCP Server Integration', () => {
       expect(result.content[0].type).toBe('image');
       expect(result.content[0].data.length).toBeGreaterThan(1000);
     });
+
+    it('saves the screenshot to disk when savePath is provided', async () => {
+      const fs = await import('node:fs/promises');
+      const os = await import('node:os');
+      const path = await import('node:path');
+      const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'browserplex-shot-'));
+      const savePath = path.join(dir, 'shot.png');
+
+      const result = await toolCall('browser_take_screenshot', {
+        session: 'integration-test',
+        savePath,
+      });
+
+      expect(result.content[0].type).toBe('text');
+      expect(result.content[0].text).toContain(savePath);
+      expect(result.content[1].type).toBe('image');
+
+      const buf = await fs.readFile(savePath);
+      expect(buf.length).toBeGreaterThan(1000);
+      // PNG magic number: 89 50 4E 47
+      expect(buf[0]).toBe(0x89);
+      expect(buf[1]).toBe(0x50);
+      expect(buf[2]).toBe(0x4e);
+      expect(buf[3]).toBe(0x47);
+
+      await fs.rm(dir, { recursive: true, force: true });
+    });
+
+    it('rejects relative savePath', async () => {
+      const result = await toolCall('browser_take_screenshot', {
+        session: 'integration-test',
+        savePath: 'relative/path.png',
+      });
+
+      expect(result.isError).toBe(true);
+      expect(getTextContent(result)).toContain('absolute');
+    });
   });
 
   describe('JavaScript Evaluation', () => {
