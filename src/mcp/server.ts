@@ -318,6 +318,16 @@ server.tool(
 );
 
 server.tool(
+  "electron_evaluate",
+  "Execute JavaScript in the Electron MAIN process (electron sessions only). The script body runs with the Electron module bound to `electron` — e.g. stub native dialogs: `electron.dialog.showOpenDialog = async () => ({ canceled: false, filePaths: ['/path/to/file'] });`. Full Node/Electron (main) power; same trust model as browser_evaluate.",
+  {
+    session: z.string().describe("Session name (must be an electron session)"),
+    script: z.string().describe("JavaScript body; receives the Electron module as `electron`"),
+  },
+  async (args) => wrap(() => actions.electronEvaluate(args)),
+);
+
+server.tool(
   "browser_resize",
   "Resize the browser viewport",
   {

@@ -4,6 +4,7 @@ import { sessionManager } from "./sessions.js";
 import { storageManager } from "./storage.js";
 import { getEnhancedSnapshot, getSnapshotStats } from "./snapshot.js";
 import { getLocator, withFriendlyError } from "./locator.js";
+import type { ElectronApplication } from "playwright";
 import type { ActionResult, BrowserType } from "./types.js";
 
 /**
@@ -364,6 +365,22 @@ export async function browserEvaluate(args: { session: string; script: string })
   const result = await s.page.evaluate(args.script);
   // Preserve original formatting verbatim (incl. undefined-result behaviour).
   return { text: JSON.stringify(result, null, 2) as string, data: result };
+}
+
+// Run JavaScript in the Electron MAIN process (electron sessions only). The script body is
+// evaluated with the Electron module bound to `electron` — e.g. stub native dialogs:
+//   `electron.dialog.showOpenDialog = async () => ({ canceled: false, filePaths: ['/x.mp4'] });`
+// Same trust model as browser_evaluate, but with full Node/Electron (main) power.
+export async function electronEvaluate(args: { session: string; script: string }): Promise<ActionResult> {
+  const s = sessionManager.getOrThrow(args.session);
+  if (s.type !== "electron") {
+    throw new Error(`Session '${args.session}' is not an electron session (type: ${s.type})`);
+  }
+  const app = s.browser as ElectronApplication;
+  // eslint-disable-next-line @typescript-eslint/no-implied-eval
+  const fn = new Function("electron", args.script) as (electron: unknown) => unknown;
+  const result = await app.evaluate(fn as never);
+  return { text: JSON.stringify(result ?? null, null, 2), data: result };
 }
 
 export async function browserResize(args: {

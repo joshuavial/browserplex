@@ -41,6 +41,7 @@ export const actionDispatch: Record<string, Action> = {
   // utilities
   browser_wait_for: (a) => actions.browserWaitFor(a as never),
   browser_evaluate: (a) => actions.browserEvaluate(a as never),
+  electron_evaluate: (a) => actions.electronEvaluate(a as never),
   browser_resize: (a) => actions.browserResize(a as never),
   browser_console_messages: (a) => actions.browserConsoleMessages(a as never),
   browser_network_requests: (a) => actions.browserNetworkRequests(a as never),
