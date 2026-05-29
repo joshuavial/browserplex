@@ -19,10 +19,11 @@
 - Daemon IPC, CLI e2e, and protocol unit tests.
 
 ### Changed
-- **Minimal runtime footprint:** only `@modelcontextprotocol/sdk`, `playwright`, and `zod` are runtime
-  dependencies. `sharp` (screenshot auto-resize) and `camoufox-js` (stealth engine) are now optional
-  dev dependencies, loaded lazily — install them to enable those features (see README). `electron`
-  stays a dev-only dependency (drive a target app via its own Electron binary).
+- **Minimal runtime footprint:** only `@modelcontextprotocol/sdk`, `playwright`, and `zod` are required
+  runtime dependencies. `sharp` (screenshot auto-resize) is now an **optional** dependency — installed
+  by default so auto-resize keeps working, loaded lazily, and skippable via `--omit=optional` (falls
+  back to full-size screenshots). `camoufox-js` (stealth engine) and `electron` are dev-only and loaded
+  lazily — install `camoufox-js` to use that engine; drive Electron apps via the target app's own binary.
 - Internal refactor: framework-agnostic core under `src/core`; the MCP server moved to
   `dist/mcp/server.js` (the `browserplex` bin name and `npx browserplex` usage are unchanged). MCP
   tool surface is byte-identical.

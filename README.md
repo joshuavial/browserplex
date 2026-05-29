@@ -11,16 +11,16 @@ npm install
 npm run build
 ```
 
-### Optional dependencies (kept out of the default install to stay lightweight)
+### Dependencies
 
-The runtime needs only `@modelcontextprotocol/sdk`, `playwright`, and `zod`. These extras are
-loaded lazily — install them only for the feature you want:
+The required runtime is just `@modelcontextprotocol/sdk`, `playwright`, and `zod`. Everything else is
+loaded lazily so the install stays light:
 
-| Install | Enables |
-|---------|---------|
-| `npm i sharp` | Auto-resizing screenshots to fit LLM image limits. Without it, `browser_take_screenshot` returns the full-size PNG. |
-| `npm i camoufox-js` | The `camoufox` (stealth Firefox) session type. |
-| (the target app's own Electron) | The `electron` session type — pass its binary via `executablePath`. |
+| Dependency | Kind | Enables |
+|------------|------|---------|
+| `sharp` | optional (installed by default) | Auto-resizing screenshots to fit LLM image limits. Install with `--omit=optional` to skip it; `browser_take_screenshot` then returns the full-size PNG. |
+| `camoufox-js` | install on demand (`npm i camoufox-js`) | The `camoufox` (stealth Firefox) session type. |
+| (the target app's own Electron) | — | The `electron` session type — pass its binary via `executablePath`. |
 
 WebKit/Firefox/Chromium binaries are fetched with `npx playwright install`.
 
