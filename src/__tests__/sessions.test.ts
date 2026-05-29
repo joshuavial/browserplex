@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { sessionManager } from '../sessions.js';
+import { sessionManager } from '../core/sessions.js';
 
 describe('SessionManager', () => {
   afterEach(async () => {

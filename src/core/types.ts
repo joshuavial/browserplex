@@ -60,3 +60,20 @@ export interface LockInfo {
   acquiredAt: number;
   pid: number;
 }
+
+/**
+ * Result of a core action. Frontends (MCP server, CLI/daemon) map this to their
+ * own output: the MCP adapter turns `text`/`image` into content blocks; the CLI
+ * prints `text` (or `data` under --json). Actions throw `Error` on failure.
+ *
+ * `data` MUST be JSON-serializable (plain objects/arrays/primitives) — it is the
+ * daemon/CLI wire payload in later beads.
+ */
+export interface ActionResult {
+  /** Human-readable summary (identical to the MCP server's prior success() text). */
+  text: string;
+  /** Structured payload for scripting (list/console/network/evaluate). JSON-serializable. */
+  data?: unknown;
+  /** Base64 image payload (screenshot only). */
+  image?: { base64: string; mimeType: string };
+}

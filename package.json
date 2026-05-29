@@ -3,10 +3,10 @@
   "version": "0.3.0",
   "description": "MCP server for managing multiple named browser sessions with Playwright",
   "type": "module",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "main": "dist/mcp/server.js",
+  "types": "dist/mcp/server.d.ts",
   "bin": {
-    "browserplex": "./dist/index.js"
+    "browserplex": "./dist/mcp/server.js"
   },
   "files": [
     "dist",
@@ -14,7 +14,7 @@
   ],
   "scripts": {
     "build": "tsc",
-    "start": "node dist/index.js",
+    "start": "node dist/mcp/server.js",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:unit": "vitest run src/__tests__/sessions.test.ts",

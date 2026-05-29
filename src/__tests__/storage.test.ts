@@ -2,8 +2,8 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { promises as fs } from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { storageManager } from '../storage.js';
-import { sessionManager } from '../sessions.js';
+import { storageManager } from '../core/storage.js';
+import { sessionManager } from '../core/sessions.js';
 
 const SESSIONS_DIR = path.join(os.homedir(), '.browserplex', 'sessions');
 const TEST_DOMAIN = 'test.example.com';

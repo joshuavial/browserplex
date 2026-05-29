@@ -1,0 +1,45 @@
+name: default
+stages:
+  - name: plan
+    produces: plan
+    inputs:
+      - task
+    skill: dev-planner
+    eval:
+      method: rubric
+      rubric: evals/plan-rubric.md
+  - name: implement
+    produces: diff
+    inputs:
+      - plan
+      - repo-state
+    skill: dev-coder
+  - name: test-plan
+    produces: test-plan
+    inputs:
+      - plan
+      - diff
+    skill: dev-test-writer
+    eval:
+      method: rubric
+      rubric: evals/test-plan-rubric.md
+  - name: test
+    produces: test-diff
+    inputs:
+      - test-plan
+      - diff
+    skill: dev-test-writer
+  - name: review
+    produces: review
+    inputs:
+      - diff
+      - plan
+    skill: dev-pr-reviewer
+    eval:
+      method: pairwise
+  - name: docs
+    produces: docs-diff
+    inputs:
+      - diff
+    skill: dev-docs-writer
+    optional: true
