@@ -1,4 +1,3 @@
-import sharp from "sharp";
 import { promises as fs } from "node:fs";
 import { sessionManager } from "./sessions.js";
 import { storageManager } from "./storage.js";
@@ -180,19 +179,25 @@ export async function browserTakeScreenshot(args: {
     await fs.writeFile(args.savePath, rawBuffer);
   }
 
-  // Resize if needed to stay within LLM image limits
+  // Resize if needed to stay within LLM image limits. `sharp` is an OPTIONAL dependency (it's a
+  // heavy native module) — loaded lazily; if it isn't installed we return the un-resized PNG.
   const maxDim = args.maxDimension ?? 1280;
-  const metadata = await sharp(rawBuffer).metadata();
   let buffer = rawBuffer;
-
-  if (metadata.width && metadata.height) {
-    const maxSide = Math.max(metadata.width, metadata.height);
-    if (maxSide > maxDim) {
-      buffer = await sharp(rawBuffer)
-        .resize(maxDim, maxDim, { fit: "inside", withoutEnlargement: true })
-        .png()
-        .toBuffer();
+  try {
+    const { default: sharp } = await import("sharp");
+    const metadata = await sharp(rawBuffer).metadata();
+    if (metadata.width && metadata.height) {
+      const maxSide = Math.max(metadata.width, metadata.height);
+      if (maxSide > maxDim) {
+        buffer = await sharp(rawBuffer)
+          .resize(maxDim, maxDim, { fit: "inside", withoutEnlargement: true })
+          .png()
+          .toBuffer();
+      }
     }
+  } catch {
+    // sharp not installed → skip resize, return the full-size screenshot.
+    // Install sharp (`npm i sharp`) to enable auto-resize for LLM image limits.
   }
 
   const base64 = buffer.toString("base64");

@@ -54,8 +54,13 @@ class SessionManager {
       context = await browser.newContext(contextOptions);
       page = await context.newPage();
     } else if (type === 'camoufox') {
-      // camoufox-js returns Browser by default (no user_data_dir)
-      const { Camoufox } = await import('camoufox-js');
+      // camoufox-js is an OPTIONAL dependency (stealth engine) — loaded lazily; install it to use this type.
+      let Camoufox: (opts: { headless: boolean }) => Promise<Browser>;
+      try {
+        ({ Camoufox } = (await import('camoufox-js')) as { Camoufox: typeof Camoufox });
+      } catch {
+        throw new Error("The 'camoufox' browser type requires the optional 'camoufox-js' package. Install it with: npm install camoufox-js");
+      }
       browser = await Camoufox({ headless }) as Browser;
       context = await browser.newContext(contextOptions);
       page = await context.newPage();

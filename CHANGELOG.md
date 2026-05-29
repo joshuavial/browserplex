@@ -14,9 +14,15 @@
 - `BROWSERPLEX_DIR` env to relocate the runtime dir (daemon socket/pid/log + stored sessions).
 - `bp prime` — prints an AI-agent primer (daemon model, ref workflow + gotchas, command reference) so
   an agent can drive the CLI correctly without external docs.
+- `electron_evaluate` — run JS in the Electron MAIN process (electron sessions only), e.g. to stub
+  native dialogs.
 - Daemon IPC, CLI e2e, and protocol unit tests.
 
 ### Changed
+- **Minimal runtime footprint:** only `@modelcontextprotocol/sdk`, `playwright`, and `zod` are runtime
+  dependencies. `sharp` (screenshot auto-resize) and `camoufox-js` (stealth engine) are now optional
+  dev dependencies, loaded lazily — install them to enable those features (see README). `electron`
+  stays a dev-only dependency (drive a target app via its own Electron binary).
 - Internal refactor: framework-agnostic core under `src/core`; the MCP server moved to
   `dist/mcp/server.js` (the `browserplex` bin name and `npx browserplex` usage are unchanged). MCP
   tool surface is byte-identical.

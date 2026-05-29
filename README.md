@@ -11,6 +11,19 @@ npm install
 npm run build
 ```
 
+### Optional dependencies (kept out of the default install to stay lightweight)
+
+The runtime needs only `@modelcontextprotocol/sdk`, `playwright`, and `zod`. These extras are
+loaded lazily — install them only for the feature you want:
+
+| Install | Enables |
+|---------|---------|
+| `npm i sharp` | Auto-resizing screenshots to fit LLM image limits. Without it, `browser_take_screenshot` returns the full-size PNG. |
+| `npm i camoufox-js` | The `camoufox` (stealth Firefox) session type. |
+| (the target app's own Electron) | The `electron` session type — pass its binary via `executablePath`. |
+
+WebKit/Firefox/Chromium binaries are fetched with `npx playwright install`.
+
 browserplex ships two front-ends over one shared core:
 - an **MCP server** (`browserplex` bin) for MCP hosts, and
 - a **`bp` CLI** for shells/scripts (see [CLI (`bp`)](#cli-bp) below).
