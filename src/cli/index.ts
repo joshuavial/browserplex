@@ -2,6 +2,7 @@
 import { DaemonClient } from "../daemon/client.js";
 import { parseCommand, render, topUsage, usageFor, CliError } from "./commands.js";
 import { serve, status, stop } from "./meta.js";
+import { primeText } from "./prime.js";
 
 /**
  * `bp` CLI entry. Parses argv into a command + args via the declarative table in commands.ts,
@@ -15,6 +16,13 @@ async function main(): Promise<number> {
     // eslint-disable-next-line no-console
     console.log(topUsage());
     return argv.length === 0 ? 1 : 0;
+  }
+
+  // Agent-onboarding primer (no daemon needed).
+  if (argv[0] === "prime") {
+    // eslint-disable-next-line no-console
+    console.log(primeText());
+    return 0;
   }
 
   // Daemon lifecycle meta-commands (not daemon tools; handled before the dispatch table).

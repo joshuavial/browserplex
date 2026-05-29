@@ -453,6 +453,7 @@ export function topUsage(): string {
     lines.push(`  ${spec.path.join(" ").padEnd(22)} ${spec.summary}`);
   }
   lines.push("");
+  lines.push("  prime                  Print an AI-agent primer on how to drive bp");
   lines.push("  serve                  Run the daemon in the foreground");
   lines.push("  daemon status          Show daemon status");
   lines.push("  daemon stop            Stop the running daemon");
