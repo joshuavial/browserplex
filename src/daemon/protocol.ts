@@ -2,8 +2,11 @@ import * as path from "node:path";
 import * as os from "node:os";
 import { StringDecoder } from "node:string_decoder";
 
-/** Base dir shared with storage (`~/.browserplex`). */
-export const BASE_DIR = path.join(os.homedir(), ".browserplex");
+/**
+ * Base dir for the daemon socket/pid/log and stored sessions. Defaults to `~/.browserplex`;
+ * override with `BROWSERPLEX_DIR` (used to relocate the runtime dir and to isolate tests).
+ */
+export const BASE_DIR = process.env.BROWSERPLEX_DIR || path.join(os.homedir(), ".browserplex");
 export const SOCKET_PATH = path.join(BASE_DIR, "daemon.sock");
 export const PID_PATH = path.join(BASE_DIR, "daemon.pid");
 export const LOG_PATH = path.join(BASE_DIR, "daemon.log");

@@ -4,7 +4,10 @@ import * as os from 'os';
 import type { BrowserContext } from 'playwright';
 import type { StoredSession, LockInfo } from './types.js';
 
-const SESSIONS_DIR = path.join(os.homedir(), '.browserplex', 'sessions');
+// Base dir honours BROWSERPLEX_DIR (matches the daemon's protocol.BASE_DIR), defaulting to
+// ~/.browserplex, so the whole runtime dir relocates together and tests can isolate it.
+const BASE_DIR = process.env.BROWSERPLEX_DIR || path.join(os.homedir(), '.browserplex');
+const SESSIONS_DIR = path.join(BASE_DIR, 'sessions');
 const LOCK_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 
 // Sanitize names to prevent path traversal attacks
