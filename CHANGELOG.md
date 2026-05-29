@@ -12,6 +12,8 @@
 - Daemon lifecycle: idle-exit (`BROWSERPLEX_IDLE_MS`, `0` disables), stale-socket recovery, and
   `bp serve` / `bp daemon status` / `bp daemon stop`.
 - `BROWSERPLEX_DIR` env to relocate the runtime dir (daemon socket/pid/log + stored sessions).
+- `bp prime` — prints an AI-agent primer (daemon model, ref workflow + gotchas, command reference) so
+  an agent can drive the CLI correctly without external docs.
 - Daemon IPC, CLI e2e, and protocol unit tests.
 
 ### Changed
