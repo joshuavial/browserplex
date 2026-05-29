@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { DaemonClient } from "../daemon/client.js";
 import { COMMANDS, parseCommand, render, topUsage, usageFor, CliError } from "./commands.js";
+import { serve, status, stop } from "./meta.js";
 
 /**
  * `bp` CLI entry. Parses argv into a command + args via the declarative table in commands.ts,
@@ -15,6 +16,11 @@ async function main(): Promise<number> {
     console.log(topUsage());
     return argv.length === 0 ? 1 : 0;
   }
+
+  // Daemon lifecycle meta-commands (not daemon tools; handled before the dispatch table).
+  if (argv[0] === "serve") return serve();
+  if (argv[0] === "daemon" && argv[1] === "status") return status();
+  if (argv[0] === "daemon" && argv[1] === "stop") return stop();
 
   // Per-command help: `bp <command...> --help`.
   if (argv.includes("-h") || argv.includes("--help")) {

@@ -15,7 +15,7 @@ import {
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 /** The compiled daemon entry, resolved relative to this module (dist/daemon/). */
-const DAEMON_ENTRY = path.resolve(__dirname, "server.js");
+export const DAEMON_ENTRY = path.resolve(__dirname, "server.js");
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -39,6 +39,23 @@ export class DaemonClient {
   constructor(opts: DaemonClientOptions = {}) {
     this.requestTimeoutMs =
       opts.requestTimeoutMs ?? Number(process.env.BROWSERPLEX_TIMEOUT ?? 0) ?? 0;
+  }
+
+  /**
+   * Connect to an already-running daemon WITHOUT auto-spawning. Returns false if no daemon is
+   * listening (ENOENT/ECONNREFUSED). Used by `bp daemon status`/`stop`/`serve` which must not spawn.
+   */
+  async connectExisting(): Promise<boolean> {
+    if (this.socket) return true;
+    try {
+      this.socket = await this.tryConnect();
+      this.attachHandlers(this.socket);
+      return true;
+    } catch (e) {
+      const code = (e as NodeJS.ErrnoException).code;
+      if (code === "ENOENT" || code === "ECONNREFUSED") return false;
+      throw e;
+    }
   }
 
   /** Connect, auto-spawning the daemon if it isn't running yet. */

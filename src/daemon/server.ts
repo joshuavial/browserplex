@@ -19,6 +19,51 @@ function log(msg: string): void {
   console.error(`[browserplexd ${new Date().toISOString()}] ${msg}`);
 }
 
+// ---- lifecycle state ----
+// Idle-exit grace period in ms; 0 disables idle-exit. Default 5 min.
+// NB: parse explicitly so `BROWSERPLEX_IDLE_MS=0` disables (a `Number(x) || default` would map 0
+// back to the default since 0 is falsy).
+function parseIdleMs(): number {
+  const raw = process.env.BROWSERPLEX_IDLE_MS;
+  if (raw === undefined || raw === "") return 300_000;
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 0 ? n : 300_000;
+}
+const IDLE_MS = parseIdleMs();
+const startedAt = Date.now();
+let serverRef: net.Server; // set in main() before bind so control/idle paths can reach it
+let inFlight = 0; // requests dispatched but not yet replied
+let openConnections = 0; // currently-connected clients
+let idleTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** True only when nothing is holding the daemon: no sessions, no in-flight requests, no clients. */
+function isIdle(): boolean {
+  return sessionManager.list().length === 0 && inFlight === 0 && openConnections === 0;
+}
+
+/**
+ * Re-evaluate idle state on every transition (connection open/close, request complete, startup).
+ * Arms a single unref'd timer when idle; clears it otherwise. On fire it re-checks isIdle() — so a
+ * client/session that appeared between arming and firing cannot be dropped.
+ */
+function evaluateIdle(): void {
+  if (idleTimer) {
+    clearTimeout(idleTimer);
+    idleTimer = null;
+  }
+  if (IDLE_MS <= 0 || !isIdle()) return;
+  idleTimer = setTimeout(() => {
+    idleTimer = null;
+    if (isIdle()) {
+      log(`idle for ${IDLE_MS}ms with no sessions/connections; shutting down`);
+      void shutdown("idle", serverRef);
+    } else {
+      evaluateIdle(); // something arrived during the wait — re-arm
+    }
+  }, IDLE_MS);
+  idleTimer.unref();
+}
+
 /** Validate a parsed line into a DaemonRequest, or throw. */
 function asRequest(parsed: unknown): DaemonRequest {
   if (typeof parsed !== "object" || parsed === null) {
@@ -44,6 +89,19 @@ async function handleRequest(line: string): Promise<DaemonResponse> {
     }
     const req = asRequest(parsed);
     id = req.id;
+    // Control RPC (handled before the tool registry so no fake entries leak into it).
+    if (req.tool === "__daemon_status") {
+      return {
+        id,
+        ok: true,
+        data: { pid: process.pid, sessions: sessionManager.list().map((s) => s.name), uptimeMs: Date.now() - startedAt },
+      };
+    }
+    if (req.tool === "__daemon_stop") {
+      // Reply first, then shut down on the next tick so the reply can flush.
+      setImmediate(() => void shutdown("rpc", serverRef));
+      return { id, ok: true, text: "stopping" };
+    }
     const action = actionDispatch[req.tool];
     if (!action) {
       return { id, ok: false, error: `Unknown tool: ${req.tool}` };
@@ -79,6 +137,10 @@ function onConnection(socket: net.Socket): void {
   const decoder = new LineDecoder();
   let closing = false; // set once we reject/close — stops all further reads + writes
 
+  let counted = true; // guards openConnections against a double 'close' decrement
+  openConnections++;
+  evaluateIdle(); // a live client suppresses idle-exit
+
   const reply = (res: DaemonResponse) => {
     if (closing || socket.destroyed || !socket.writable) return;
     socket.write(safeEncode(res));
@@ -100,11 +162,27 @@ function onConnection(socket: net.Socket): void {
       return;
     }
     for (const line of lines) {
-      handleRequest(line).then(reply);
+      // Track in-flight so idle-exit can't fire while a request (incl. session_create) is mid-flight.
+      inFlight++;
+      handleRequest(line)
+        .then(reply)
+        .catch(() => {
+          /* handleRequest never throws, but guard the .then(reply) write path */
+        })
+        .finally(() => {
+          inFlight--;
+          evaluateIdle();
+        });
     }
   });
   socket.on("error", () => {
     /* client vanished mid-write — ignore */
+  });
+  socket.on("close", () => {
+    if (!counted) return; // never decrement twice for one connection
+    counted = false;
+    openConnections--;
+    evaluateIdle();
   });
 }
 
@@ -113,6 +191,10 @@ let shuttingDown = false;
 async function shutdown(signal: string, server: net.Server): Promise<void> {
   if (shuttingDown) return;
   shuttingDown = true;
+  if (idleTimer) {
+    clearTimeout(idleTimer); // no stale idle fire after a signal/RPC shutdown
+    idleTimer = null;
+  }
   log(`received ${signal}, shutting down`);
   // force-exit backstop so a hung browser close can't wedge the daemon
   const force = setTimeout(() => {
@@ -161,6 +243,7 @@ async function main(): Promise<void> {
   await fs.chmod(BASE_DIR, 0o700).catch(() => {});
 
   const server = net.createServer(onConnection);
+  serverRef = server;
 
   const startListen = () =>
     new Promise<void>((resolve, reject) => {
@@ -172,30 +255,35 @@ async function main(): Promise<void> {
       });
     });
 
-  try {
-    await startListen();
-  } catch (e) {
-    if ((e as NodeJS.ErrnoException).code === "EADDRINUSE") {
-      // Do NOT blindly unlink — a live daemon may own it. Probe first.
-      const alive = await probeSocket();
-      if (alive) {
+  // Bind with bounded stale-socket recovery. On EADDRINUSE: probe — a live listener means another
+  // daemon owns it (exit); a stale socket gets unlinked and we retry. If a concurrent daemon rebinds
+  // between our probe and unlink, the next listen throws EADDRINUSE again and we re-probe (rather than
+  // blindly unlinking a now-live socket). Bounded so a persistent failure can't loop forever.
+  let bound = false;
+  for (let attempt = 0; attempt < 5 && !bound; attempt++) {
+    try {
+      await startListen();
+      bound = true;
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== "EADDRINUSE") throw e;
+      if (await probeSocket()) {
         log(`a daemon is already listening on ${SOCKET_PATH}; exiting`);
         process.exit(0);
       }
-      log(`removing stale socket ${SOCKET_PATH}`);
-      await fs.unlink(SOCKET_PATH).catch(() => {});
-      await startListen();
-    } else {
-      throw e;
+      log(`removing stale socket ${SOCKET_PATH} (attempt ${attempt + 1})`);
+      await fs.unlink(SOCKET_PATH).catch(() => {}); // tolerate ENOENT / races
     }
   }
+  if (!bound) throw new Error(`could not bind ${SOCKET_PATH} after stale-recovery attempts`);
 
   await fs.chmod(SOCKET_PATH, SOCKET_MODE).catch(() => {});
   await fs.writeFile(PID_PATH, String(process.pid));
-  log(`listening on ${SOCKET_PATH} (pid ${process.pid})`);
+  log(`listening on ${SOCKET_PATH} (pid ${process.pid}, idle ${IDLE_MS}ms)`);
 
   process.on("SIGINT", () => void shutdown("SIGINT", server));
   process.on("SIGTERM", () => void shutdown("SIGTERM", server));
+
+  evaluateIdle(); // a daemon spawned but never used still idle-exits after the grace period
 }
 
 main().catch((e) => {
