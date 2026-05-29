@@ -20,25 +20,53 @@ function bp(args: string[], input?: string): Promise<{ code: number; out: string
   });
 }
 
-describe('bp CLI e2e (separate processes, isolated daemon dir)', () => {
-  beforeAll(async () => {
-    dir = await fs.mkdtemp(path.join(os.tmpdir(), 'bp-cli-'));
-    // idle disabled so the daemon persists across the separate-process commands in this suite
-    env = { ...process.env, BROWSERPLEX_DIR: dir, BROWSERPLEX_IDLE_MS: '0' };
-  });
-  afterAll(async () => {
-    await bp(['daemon', 'stop']).catch(() => {});
-    // belt-and-suspenders: kill the daemon by pid if still around
-    try {
-      const pid = parseInt(await fs.readFile(path.join(dir, 'daemon.pid'), 'utf8'), 10);
-      process.kill(pid, 'SIGTERM');
-    } catch {
-      /* gone */
-    }
-    await sleep(300);
-    await fs.rm(dir, { recursive: true, force: true });
+// File-level isolation so EVERY bp invocation (incl. the parsing tests, one of which auto-spawns a
+// daemon) uses a unique temp BROWSERPLEX_DIR — never the real ~/.browserplex.
+beforeAll(async () => {
+  dir = await fs.mkdtemp(path.join(os.tmpdir(), 'bp-cli-'));
+  env = { ...process.env, BROWSERPLEX_DIR: dir, BROWSERPLEX_IDLE_MS: '0' };
+});
+afterAll(async () => {
+  await bp(['daemon', 'stop']).catch(() => {});
+  try {
+    const pid = parseInt(await fs.readFile(path.join(dir, 'daemon.pid'), 'utf8'), 10);
+    process.kill(pid, 'SIGTERM');
+  } catch {
+    /* gone */
+  }
+  await sleep(300);
+  await fs.rm(dir, { recursive: true, force: true });
+});
+
+describe('bp CLI parsing/help', () => {
+  it('top-level --help lists commands', async () => {
+    const r = await bp(['--help']);
+    expect(r.code).toBe(0);
+    expect(r.out).toMatch(/session create/);
+    expect(r.out).toMatch(/serve/);
   });
 
+  it('per-command --help is preserved (value-slot-aware)', async () => {
+    const r = await bp(['navigate', '--help']);
+    expect(r.code).toBe(0);
+    expect(r.out).toMatch(/Usage: bp navigate <url>/);
+  });
+
+  it('a -h after -- is a value, NOT help', async () => {
+    // `eval -- -h` => script is the literal "-h"; with no session it errors, NOT help.
+    const r = await bp(['eval', '--', '-h']);
+    expect(r.out).not.toMatch(/Usage:/);
+    expect(r.err).not.toMatch(/Usage:/);
+  });
+
+  it('--field and --fields-json together is an error', async () => {
+    const r = await bp(['fill', '--field', 'a=b', '--fields-json', '[]']);
+    expect(r.code).toBe(2);
+    expect(r.err).toMatch(/either --field or --fields-json/);
+  });
+});
+
+describe('bp CLI e2e (separate processes, isolated daemon dir)', () => {
   it('auto-spawns the daemon and reuses a live session across separate processes', async () => {
     const create = await bp(['session', 'create', 'app', '-b', 'chromium', '--headless']);
     expect(create.code).toBe(0);

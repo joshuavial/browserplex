@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { DaemonClient } from "../daemon/client.js";
-import { COMMANDS, parseCommand, render, topUsage, usageFor, CliError } from "./commands.js";
+import { parseCommand, render, topUsage, usageFor, CliError } from "./commands.js";
 import { serve, status, stop } from "./meta.js";
 
 /**
@@ -22,14 +22,8 @@ async function main(): Promise<number> {
   if (argv[0] === "daemon" && argv[1] === "status") return status();
   if (argv[0] === "daemon" && argv[1] === "stop") return stop();
 
-  // Per-command help: `bp <command...> --help`.
-  if (argv.includes("-h") || argv.includes("--help")) {
-    const spec = COMMANDS.find((s) => s.path.every((p, i) => argv[i] === p));
-    // eslint-disable-next-line no-console
-    console.log(spec ? usageFor(spec) : topUsage());
-    return 0;
-  }
-
+  // Command parsing handles per-command help in a value-slot-aware way (a -h/--help in flag
+  // position sets parsed.help); a -h after `--` or as a flag value is NOT help.
   let parsed;
   try {
     parsed = parseCommand(argv);
@@ -39,6 +33,12 @@ async function main(): Promise<number> {
       return e.code;
     }
     throw e;
+  }
+
+  if (parsed.help) {
+    // eslint-disable-next-line no-console
+    console.log(usageFor(parsed.spec));
+    return 0;
   }
 
   const client = new DaemonClient();

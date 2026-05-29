@@ -11,7 +11,11 @@ npm install
 npm run build
 ```
 
-## Usage
+browserplex ships two front-ends over one shared core:
+- an **MCP server** (`browserplex` bin) for MCP hosts, and
+- a **`bp` CLI** for shells/scripts (see [CLI (`bp`)](#cli-bp) below).
+
+## Usage (MCP server)
 
 ### Via npx
 
@@ -35,11 +39,49 @@ npm run build
     "browserplex": {
       "type": "stdio",
       "command": "node",
-      "args": ["/path/to/browserplex/dist/index.js"]
+      "args": ["/path/to/browserplex/dist/mcp/server.js"]
     }
   }
 }
 ```
+
+## CLI (`bp`)
+
+The `bp` command drives the same browser sessions from a shell or script. Because a browser session
+is a live, in-memory Playwright handle, `bp` is a thin client over a **background daemon** that holds
+the sessions: the first `bp` command auto-spawns the daemon (a unix socket at `~/.browserplex/
+daemon.sock`), and later commands — even from other terminals or scripts — reuse the same live
+sessions. The daemon idle-exits once no sessions/clients remain.
+
+```bash
+npm install && npm run build      # or: npm i -g browserplex  (provides the `bp` bin)
+
+bp session create web --browser chromium       # auto-spawns the daemon
+bp navigate https://example.com -s web          # second process, same live session
+bp snapshot -s web --interactive                 # refs (@e1 …) for clicks/types
+bp click @e3 -s web
+bp screenshot -s web -o shot.png                 # write the PNG to disk
+echo 'document.title' | bp eval -s web           # JS from stdin (or: bp eval -s web "1+1")
+bp console -s web --json                          # structured output for scripting
+bp session destroy web
+```
+
+Command groups (run `bp --help`, or `bp <command> --help`, for the full list):
+`bp session create|list|destroy`, `bp storage save|load|list|delete|lock|unlock`, and the browser
+verbs `navigate back snapshot screenshot click type press hover drag select upload fill dialog wait
+eval resize console network tabs`. Global flags: `-s/--session <name>`, `--json`. Notables:
+`screenshot -o <file>`, `fill --field 'sel=value'` (repeatable) or `--fields-json '[…]'`,
+`eval` reads JS from the argument or stdin.
+
+### Daemon control & environment
+
+| Command / env | Description |
+|---------------|-------------|
+| `bp serve` | Run the daemon in the foreground (logs to the terminal) |
+| `bp daemon status` | Show whether the daemon is running, its pid, and active sessions |
+| `bp daemon stop` | Stop the running daemon |
+| `BROWSERPLEX_IDLE_MS` | Idle-exit grace period in ms (default `300000`; `0` disables idle-exit) |
+| `BROWSERPLEX_DIR` | Relocate the runtime dir — daemon socket/pid/log + stored sessions (default `~/.browserplex`) |
 
 ## Browser Types
 
@@ -102,7 +144,7 @@ Caveats:
 |------|-------------|
 | `browser_navigate` | Navigate to a URL |
 | `browser_navigate_back` | Go back in browser history |
-| `browser_snapshot` | Get page title, URL, and visible text content |
+| `browser_snapshot` | Accessibility tree snapshot with element refs (@e1, @e2) for reliable clicks/types |
 | `browser_take_screenshot` | Capture screenshot (auto-resized for LLM context; optional `savePath` writes the un-resized PNG to disk) |
 
 ### Interaction

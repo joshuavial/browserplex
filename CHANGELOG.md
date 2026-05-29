@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.4.0] - 2026-05-30
+
+### Added
+- **`bp` CLI** front-end (new `bp` bin) over a shared core, backed by a **background daemon** that
+  holds live browser sessions across separate `bp` invocations (auto-spawned on first use; unix
+  socket at `~/.browserplex/daemon.sock`). All 28 tools are reachable as ergonomic subcommands
+  (`bp session …`, `bp navigate`, `bp screenshot -o`, `bp eval`, `bp fill --field`, …).
+- **`electron` session type** — drive an Electron app's renderer through the existing action surface
+  (`session_create type="electron"` with `executablePath`/`electronArgs`/`cwd`/`env`).
+- Daemon lifecycle: idle-exit (`BROWSERPLEX_IDLE_MS`, `0` disables), stale-socket recovery, and
+  `bp serve` / `bp daemon status` / `bp daemon stop`.
+- `BROWSERPLEX_DIR` env to relocate the runtime dir (daemon socket/pid/log + stored sessions).
+- Daemon IPC, CLI e2e, and protocol unit tests.
+
+### Changed
+- Internal refactor: framework-agnostic core under `src/core`; the MCP server moved to
+  `dist/mcp/server.js` (the `browserplex` bin name and `npx browserplex` usage are unchanged). MCP
+  tool surface is byte-identical.
+
+### Known limitations
+- The `electron` type opens a real window (not headless); Linux CI needs a virtual display (xvfb).
+- An abandoned/open client connection suppresses the daemon's idle-exit until it closes.
+- A non-socket file left at the socket path is not auto-recovered (a real dead-daemon leftover is a
+  socket and is recovered); stale-socket recovery is best-effort/non-atomic (fine for single-user).
+
 ## [0.3.0] - 2026-05-06
 
 ### Added

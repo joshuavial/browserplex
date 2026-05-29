@@ -1,12 +1,13 @@
 {
   "name": "browserplex",
-  "version": "0.3.0",
-  "description": "MCP server for managing multiple named browser sessions with Playwright",
+  "version": "0.4.0",
+  "description": "MCP server + bp CLI for managing multiple named browser sessions with Playwright",
   "type": "module",
   "main": "dist/mcp/server.js",
   "types": "dist/mcp/server.d.ts",
   "bin": {
-    "browserplex": "./dist/mcp/server.js"
+    "browserplex": "./dist/mcp/server.js",
+    "bp": "./dist/cli/index.js"
   },
   "files": [
     "dist",

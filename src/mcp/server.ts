@@ -8,7 +8,7 @@ import type { ActionResult } from "../core/types.js";
 
 const server = new McpServer({
   name: "browserplex",
-  version: "0.3.0",
+  version: "0.4.0",
 });
 
 type McpContent =

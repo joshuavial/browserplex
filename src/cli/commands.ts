@@ -259,6 +259,7 @@ export interface Parsed {
   spec: CommandSpec;
   args: Record<string, unknown>;
   json: boolean;
+  help: boolean;
 }
 
 export class CliError extends Error {
@@ -304,6 +305,7 @@ export function parseCommand(argv: string[]): Parsed {
   const positionals: string[] = [];
   const flags: Record<string, unknown> = {};
   let json = false;
+  let help = false;
   let endOfOpts = false;
 
   for (let i = 0; i < rest.length; i++) {
@@ -314,6 +316,13 @@ export function parseCommand(argv: string[]): Parsed {
     }
     if (!endOfOpts && (t === "--json")) {
       json = true;
+      continue;
+    }
+    // Help is value-slot-aware: only a -h/--help reached in flag position (before `--`, and not
+    // consumed as a flag's value via the rest[++i] below) counts. A -h after `--` or as a flag's
+    // value is NOT help.
+    if (!endOfOpts && (t === "-h" || t === "--help")) {
+      help = true;
       continue;
     }
     if (!endOfOpts && isFlag(t)) {
@@ -337,8 +346,12 @@ export function parseCommand(argv: string[]): Parsed {
     }
   }
 
+  // Short-circuit on help BEFORE buildArgs, so `bp eval --help` etc. don't trigger stdin reads or
+  // required-positional/validation errors.
+  if (help) return { spec, args: {}, json, help: true };
+
   const args = buildArgs(spec, positionals, flags);
-  return { spec, args, json };
+  return { spec, args, json, help: false };
 }
 
 /** Map positionals + raw flags into the action-arg object, applying per-command transforms. */
@@ -372,6 +385,10 @@ function buildArgs(spec: CommandSpec, positionals: string[], flags: Record<strin
     args.env = obj;
   }
 
+  // --field and --fields-json are mutually exclusive (otherwise fields-json would silently win).
+  if (Array.isArray(args.field) && typeof args.fields === "string") {
+    throw new CliError("use either --field or --fields-json, not both");
+  }
   // --field selector=value (repeatable) -> fields[] (split on FIRST '=', selectors may contain '=')
   if (Array.isArray(args.field)) {
     args.fields = (args.field as string[]).map((kv) => {
