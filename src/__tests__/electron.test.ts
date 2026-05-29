@@ -3,7 +3,7 @@ import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import * as path from 'node:path';
 import { sessionManager } from '../core/sessions.js';
-import { sessionCreate, browserEvaluate, browserSnapshot } from '../core/actions.js';
+import { sessionCreate, browserEvaluate, browserSnapshot, electronEvaluate } from '../core/actions.js';
 
 const require = createRequire(import.meta.url);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -43,6 +43,13 @@ maybe('electron session type', () => {
     // existing snapshot action works unchanged on the Electron window
     const snap = await browserSnapshot({ session: NAME, interactive: false });
     expect(snap.text).toContain('Electron Fixture Ready');
+
+    // electron_evaluate runs in the MAIN process (process.type === 'browser'); the script body
+    // receives the Electron module as `electron`.
+    const mainRes = await electronEvaluate({ session: NAME, script: 'return process.type' });
+    expect(mainRes.data).toBe('browser');
+    const nameRes = await electronEvaluate({ session: NAME, script: 'return electron.app.getName()' });
+    expect(typeof nameRes.data).toBe('string');
 
     // clean teardown via app.close() (the electron branch in destroy())
     await sessionManager.destroy(NAME);

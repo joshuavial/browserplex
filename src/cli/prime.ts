@@ -95,8 +95,11 @@ bp session create app --browser electron \\
   --executable-path /path/app/node_modules/.bin/electron \\
   --electron-arg /path/app --cwd /path/app --env MY_TEST_MODE=1
 bp eval -s app "window.myPreloadBridge !== undefined"   # eval runs in the renderer; preload bridge is live
+bp electron-eval -s app "return electron.app.getName()" # eval in the MAIN process; body gets the Electron module as \`electron\`
 \`\`\`
-Set \`--executable-path\` to the target app's Electron binary (bp does not bundle Electron at runtime).
+\`bp electron-eval\` runs JS in the Electron MAIN process (electron sessions only) — the script is a
+function BODY (use \`return\`) and receives the Electron module as \`electron\` (e.g. stub a native
+dialog). Set \`--executable-path\` to the target app's Electron binary (bp does not bundle Electron at runtime).
 \`webkit\`/\`camoufox\` engines require their Playwright/camoufox browser binaries to be installed.
 
 ## Daemon control & environment

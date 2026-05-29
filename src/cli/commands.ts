@@ -221,7 +221,13 @@ export const COMMANDS: CommandSpec[] = [
     path: ["eval"],
     tool: "browser_evaluate",
     positionals: [{ key: "script", required: false, desc: "JS (omit or '-' to read stdin)" }],
-    summary: "Evaluate JS in the page",
+    summary: "Evaluate JS in the page (renderer)",
+  },
+  {
+    path: ["electron-eval"],
+    tool: "electron_evaluate",
+    positionals: [{ key: "script", required: false, desc: "JS body, gets the Electron module as `electron` (omit or '-' for stdin)" }],
+    summary: "Evaluate JS in the Electron MAIN process (electron sessions)",
   },
   {
     path: ["resize"],
@@ -412,8 +418,8 @@ function buildArgs(spec: CommandSpec, positionals: string[], flags: Record<strin
     args.savePath = path.resolve(process.cwd(), args.savePath as string);
   }
 
-  // eval: script from positional, or stdin when omitted / '-'
-  if (spec.tool === "browser_evaluate") {
+  // eval / electron-eval: script from positional, or stdin when omitted / '-'
+  if (spec.tool === "browser_evaluate" || spec.tool === "electron_evaluate") {
     const s = args.script;
     if (s === undefined || s === "-") {
       args.script = readFileSync(0, "utf8");

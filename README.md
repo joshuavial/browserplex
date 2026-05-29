@@ -84,7 +84,8 @@ Command groups (run `bp --help`, or `bp <command> --help`, for the full list):
 verbs `navigate back snapshot screenshot click type press hover drag select upload fill dialog wait
 eval resize console network tabs`. Global flags: `-s/--session <name>`, `--json`. Notables:
 `screenshot -o <file>`, `fill --field 'sel=value'` (repeatable) or `--fields-json '[…]'`,
-`eval` reads JS from the argument or stdin.
+`eval` reads JS from the argument or stdin. For `electron` sessions, `bp electron-eval` runs JS in
+the Electron **main** process (the script body receives the Electron module as `electron`).
 
 ### Daemon control & environment
 
