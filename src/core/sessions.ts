@@ -1,19 +1,19 @@
-import { chromium, firefox, webkit, type Browser, type BrowserContext, type Page } from 'playwright';
-import type { BrowserSession, BrowserType, SessionInfo, ConsoleMessage, NetworkRequest } from './types.js';
+import { chromium, firefox, webkit, _electron, type Browser, type BrowserContext, type Page, type ElectronApplication } from 'playwright';
+import type { BrowserSession, BrowserType, SessionInfo, ConsoleMessage, NetworkRequest, ElectronLaunchOptions } from './types.js';
 
 class SessionManager {
   private sessions: Map<string, BrowserSession> = new Map();
 
-  async create(name: string, type: BrowserType = 'chromium', headless: boolean = true): Promise<BrowserSession> {
-    return this.createWithStorage(name, type, headless, undefined);
+  async create(name: string, type: BrowserType = 'chromium', headless: boolean = true, launch?: ElectronLaunchOptions): Promise<BrowserSession> {
+    return this.createWithStorage(name, type, headless, undefined, launch);
   }
 
-  async createWithStorage(name: string, type: BrowserType = 'chromium', headless: boolean = true, storageState?: object): Promise<BrowserSession> {
+  async createWithStorage(name: string, type: BrowserType = 'chromium', headless: boolean = true, storageState?: object, launch?: ElectronLaunchOptions): Promise<BrowserSession> {
     if (this.sessions.has(name)) {
       throw new Error(`Session '${name}' already exists`);
     }
 
-    let browser: Browser | BrowserContext;
+    let browser: Browser | BrowserContext | ElectronApplication;
     let context: BrowserContext;
     let page: Page;
 
@@ -21,7 +21,27 @@ class SessionManager {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const contextOptions = storageState ? { storageState: storageState as any } : {};
 
-    if (type === 'chromium') {
+    if (type === 'electron') {
+      // Drive an Electron app. The window from firstWindow() is a normal Playwright Page,
+      // so every page-centric action works unchanged. headless and storageState do not
+      // apply to an Electron launch and are ignored.
+      const app = await _electron.launch({
+        args: launch?.args ?? ['.'],
+        executablePath: launch?.executablePath,
+        cwd: launch?.cwd,
+        env: launch?.env ? { ...process.env, ...launch.env } as Record<string, string> : undefined,
+      });
+      try {
+        // If firstWindow()/context() throws, the app is launched but never stored in the
+        // session map — close it here so the Electron process isn't orphaned.
+        page = await app.firstWindow();
+        context = app.context();
+        browser = app;
+      } catch (e) {
+        await app.close().catch(() => {});
+        throw e;
+      }
+    } else if (type === 'chromium') {
       browser = await chromium.launch({ headless });
       context = await browser.newContext(contextOptions);
       page = await context.newPage();
@@ -115,9 +135,15 @@ class SessionManager {
 
     this.sessions.delete(name);
     try {
-      await session.context.close();
-      if ('close' in session.browser) {
-        await (session.browser as Browser).close();
+      if (session.type === 'electron') {
+        // Closing the ElectronApplication tears down its context+window; calling
+        // context.close() on an Electron context is redundant/erroneous, so skip it.
+        await (session.browser as ElectronApplication).close();
+      } else {
+        await session.context.close();
+        if ('close' in session.browser) {
+          await (session.browser as Browser).close();
+        }
       }
     } catch {
       // Browser may already be closed

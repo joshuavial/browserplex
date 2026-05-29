@@ -1,6 +1,23 @@
-import type { Browser, BrowserContext, Page } from 'playwright';
+import type { Browser, BrowserContext, Page, ElectronApplication } from 'playwright';
 
-export type BrowserType = 'chromium' | 'firefox' | 'webkit' | 'camoufox';
+export type BrowserType = 'chromium' | 'firefox' | 'webkit' | 'camoufox' | 'electron';
+
+/** Launch options used only when type === 'electron'. */
+export interface ElectronLaunchOptions {
+  /** Args passed to electron (default ['.']). Typically the path to the target app. */
+  args?: string[];
+  /**
+   * Path to the Electron binary to launch. This is what selects WHICH Electron is used
+   * (e.g. the target app's own `node_modules/.bin/electron`). When omitted, Playwright
+   * falls back to `require('electron')` resolved from browserplex's install — which is a
+   * dev-only devDependency, so production users driving their own app should set this.
+   */
+  executablePath?: string;
+  /** Spawn working directory (NOT used to resolve the Electron binary — that's executablePath). */
+  cwd?: string;
+  /** Extra environment for the launched app (e.g. test-mode hooks). */
+  env?: Record<string, string>;
+}
 
 export interface ConsoleMessage {
   type: string;
@@ -31,7 +48,7 @@ export interface RefMap {
 export interface BrowserSession {
   name: string;
   type: BrowserType;
-  browser: Browser | BrowserContext;
+  browser: Browser | BrowserContext | ElectronApplication;
   context: BrowserContext;
   page: Page;
   createdAt: Date;

@@ -1,0 +1,6 @@
+{
+  "name": "bp-electron-fixture",
+  "version": "1.0.0",
+  "main": "main.js",
+  "private": true
+}

@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>BP Electron Fixture</title>
+  </head>
+  <body>
+    <h1 id="heading">Electron Fixture Ready</h1>
+    <button id="go">Go</button>
+    <script>
+      // Marker the test asserts via browser_evaluate, proving the renderer (and any
+      // preload bridge in a real app) is live — not just a static shell.
+      window.__bpTest = 'electron-ok';
+    </script>
+  </body>
+</html>

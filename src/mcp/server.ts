@@ -52,8 +52,12 @@ server.tool(
   "Create a new named browser session",
   {
     name: z.string().describe("Unique name for this browser session"),
-    type: z.enum(["chromium", "firefox", "webkit", "camoufox"]).default("chromium").describe("Browser type: chromium (default), firefox, webkit (Safari), or camoufox (stealth Firefox)"),
-    headless: z.boolean().optional().describe("Run headless (default: true for chromium, false for camoufox)"),
+    type: z.enum(["chromium", "firefox", "webkit", "camoufox", "electron"]).default("chromium").describe("Browser type: chromium (default), firefox, webkit (Safari), camoufox (stealth Firefox), or electron (drive an Electron app)"),
+    headless: z.boolean().optional().describe("Run headless (default: true for chromium, false for camoufox; ignored for electron, which always opens a real window)"),
+    electronArgs: z.array(z.string()).optional().describe("electron only: args passed to the Electron launch (default ['.']), e.g. the path to the target app"),
+    executablePath: z.string().optional().describe("electron only: path to the Electron binary to launch (e.g. the target app's node_modules/.bin/electron). Selects WHICH Electron runs; if omitted, falls back to browserplex's dev-only bundled electron"),
+    cwd: z.string().optional().describe("electron only: spawn working directory (does NOT select the Electron binary — use executablePath for that)"),
+    env: z.record(z.string()).optional().describe("electron only: extra environment variables for the launched app (e.g. test-mode hooks)"),
   },
   async (args) => wrap(() => actions.sessionCreate(args)),
 );

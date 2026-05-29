@@ -49,6 +49,42 @@ npm run build
 | `firefox` | Firefox | Standard Firefox browser |
 | `webkit` | Safari | Test Safari rendering, iOS compatibility |
 | `camoufox` | Firefox | Stealth browsing, anti-detection |
+| `electron` | Electron | Drive an Electron desktop app (renderer + preload bridge) |
+
+### Driving Electron apps
+
+`session_create type="electron"` launches an Electron application via Playwright and attaches to its
+first window — which is an ordinary Playwright `Page`, so every action (`browser_snapshot`,
+`browser_click`, `browser_evaluate`, `browser_take_screenshot`, console/network, …) works unchanged.
+Because `browser_evaluate` runs **in the renderer**, the app's preload bridge is live — you can drive
+and assert the full app, not just the static shell.
+
+```
+session_create name="app" type="electron" \
+  executablePath="/path/to/your-app/node_modules/.bin/electron" \
+  electronArgs=["/path/to/your-app"] cwd="/path/to/your-app" env={"MY_TEST_MODE":"1"}
+browser_evaluate session="app" script="window.myPreloadBridge !== undefined"
+```
+
+Electron-only `session_create` params:
+
+| Param | Description |
+|-------|-------------|
+| `executablePath` | **Path to the Electron binary to launch** — this selects *which* Electron runs. Point it at your app's `node_modules/.bin/electron`. If omitted, Playwright falls back to `require('electron')` resolved from browserplex's own install (a dev-only dependency), so set this when driving your own app. |
+| `electronArgs` | Args passed to the Electron launch (default `["."]`) — typically the target app path |
+| `cwd` | Spawn working directory (does **not** select the Electron binary — that's `executablePath`) |
+| `env` | Extra environment for the launched app (e.g. enabling a test-mode hook) |
+
+> **Electron binary:** browserplex does not ship Electron as a runtime dependency (it's a
+> devDependency used only for browserplex's own tests). To drive your app, set `executablePath` to
+> that app's Electron binary so the launched runtime matches the app's Electron version.
+
+Caveats:
+- Not headless — a real window opens. On Linux CI, run under a virtual display (xvfb). The `headless`
+  flag is ignored for `electron`.
+- Native OS file dialogs can't be driven by Playwright; apps should expose test hooks (use `env`).
+- `browser_navigate` is a no-op (the app loads its own URL); stored storage state does not apply;
+  `browser_tabs` maps to the app's windows.
 
 ## Tools
 

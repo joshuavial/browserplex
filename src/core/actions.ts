@@ -23,11 +23,20 @@ export async function sessionCreate(args: {
   name: string;
   type?: BrowserType;
   headless?: boolean;
+  // electron-only launch options (ignored for other types)
+  electronArgs?: string[];
+  executablePath?: string;
+  cwd?: string;
+  env?: Record<string, string>;
 }): Promise<ActionResult> {
   const browserType = args.type ?? "chromium";
-  // Default: chromium headless, camoufox headed (for manual interaction)
+  // Default: chromium headless, camoufox/electron headed (for manual interaction)
   const useHeadless = args.headless ?? (browserType === "chromium");
-  await sessionManager.create(args.name, browserType, useHeadless);
+  const launch =
+    browserType === "electron"
+      ? { args: args.electronArgs, executablePath: args.executablePath, cwd: args.cwd, env: args.env }
+      : undefined;
+  await sessionManager.create(args.name, browserType, useHeadless, launch);
   return { text: `Created ${browserType} session '${args.name}'${useHeadless ? "" : " (headed)"}` };
 }
 
