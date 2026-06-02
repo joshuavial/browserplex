@@ -19,10 +19,17 @@ import type { ActionResult, BrowserType } from "./types.js";
 
 // ---- Session management ----
 
+/** Headless unless `headed` is set; `headless` still works as an explicit opt-in. Default: headless. */
+function resolveHeadless(args: { headless?: boolean; headed?: boolean }): boolean {
+  if (args.headed) return false;
+  return args.headless ?? true;
+}
+
 export async function sessionCreate(args: {
   name: string;
   type?: BrowserType;
   headless?: boolean;
+  headed?: boolean;
   // electron-only launch options (ignored for other types)
   electronArgs?: string[];
   executablePath?: string;
@@ -30,8 +37,9 @@ export async function sessionCreate(args: {
   env?: Record<string, string>;
 }): Promise<ActionResult> {
   const browserType = args.type ?? "chromium";
-  // Default: chromium headless, camoufox/electron headed (for manual interaction)
-  const useHeadless = args.headless ?? (browserType === "chromium");
+  // All browser types default to headless; `headed` (or headless:false) opts into a visible window.
+  // Electron always opens a real window regardless.
+  const useHeadless = browserType === "electron" ? false : resolveHeadless(args);
   const launch =
     browserType === "electron"
       ? { args: args.electronArgs, executablePath: args.executablePath, cwd: args.cwd, env: args.env }
@@ -73,11 +81,12 @@ export async function storageLoad(args: {
   storageName?: string;
   type?: BrowserType;
   headless?: boolean;
+  headed?: boolean;
 }): Promise<ActionResult> {
   const browserType = args.type ?? "chromium";
   const storage = args.storageName ?? "default";
   const storageState = await storageManager.load(args.domain, storage);
-  const useHeadless = args.headless ?? (browserType === "chromium");
+  const useHeadless = resolveHeadless(args); // headless by default; --headed opts in
   await sessionManager.createWithStorage(args.name, browserType, useHeadless, storageState);
   return {
     text: `Created ${browserType} session '${args.name}' with stored session '${storage}' for ${args.domain}`,

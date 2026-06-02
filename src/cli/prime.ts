@@ -45,7 +45,7 @@ content, interact, screenshot, run JS, and inspect console/network.
 
 ## The loop you will almost always run
 \`\`\`
-bp session create web --browser chromium   # once; pick chromium (default) | firefox | webkit | camoufox | electron
+bp session create web --browser chromium   # once; chromium (default) | firefox | webkit | camoufox | electron. Headless by default — add --headed for a visible window (electron is always headed).
 bp navigate <url> -s web                    # -s/--session selects the session; every browser command needs it (omitting it errors)
 bp snapshot -s web                          # READ the page: prints an accessibility tree with refs (@e1, @e2, …)
 bp click @e3 -s web                         # act using a ref FROM THE SNAPSHOT YOU JUST TOOK

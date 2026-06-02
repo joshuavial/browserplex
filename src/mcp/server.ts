@@ -8,7 +8,7 @@ import type { ActionResult } from "../core/types.js";
 
 const server = new McpServer({
   name: "browserplex",
-  version: "0.4.0",
+  version: "0.5.0",
 });
 
 type McpContent =
@@ -53,7 +53,8 @@ server.tool(
   {
     name: z.string().describe("Unique name for this browser session"),
     type: z.enum(["chromium", "firefox", "webkit", "camoufox", "electron"]).default("chromium").describe("Browser type: chromium (default), firefox, webkit (Safari), camoufox (stealth Firefox), or electron (drive an Electron app)"),
-    headless: z.boolean().optional().describe("Run headless (default: true for chromium, false for camoufox; ignored for electron, which always opens a real window)"),
+    headless: z.boolean().optional().describe("Run headless. Default: true for all browser types (electron always opens a real window regardless)"),
+    headed: z.boolean().optional().describe("Open a visible browser window (opt-in; overrides the headless default for any browser type)"),
     electronArgs: z.array(z.string()).optional().describe("electron only: args passed to the Electron launch (default ['.']), e.g. the path to the target app"),
     executablePath: z.string().optional().describe("electron only: path to the Electron binary to launch (e.g. the target app's node_modules/.bin/electron). Selects WHICH Electron runs; if omitted, falls back to browserplex's dev-only bundled electron"),
     cwd: z.string().optional().describe("electron only: spawn working directory (does NOT select the Electron binary — use executablePath for that)"),
@@ -98,7 +99,8 @@ server.tool(
     domain: z.string().describe("Domain to load storage from"),
     storageName: z.string().default("default").describe("Name of the stored session to load"),
     type: z.enum(["chromium", "firefox", "webkit", "camoufox"]).default("chromium").describe("Browser type"),
-    headless: z.boolean().optional().describe("Run headless (default: true for chromium, false for camoufox)"),
+    headless: z.boolean().optional().describe("Run headless. Default: true for all browser types"),
+    headed: z.boolean().optional().describe("Open a visible browser window (opt-in; overrides the headless default)"),
   },
   async (args) => wrap(() => actions.storageLoad(args)),
 );

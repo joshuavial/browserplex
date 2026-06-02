@@ -41,7 +41,8 @@ export const COMMANDS: CommandSpec[] = [
     positionals: [{ key: "name", required: true, desc: "session name" }],
     flags: {
       browser: { key: "type", type: "string", alias: "b", desc: "chromium|firefox|webkit|camoufox|electron" },
-      headless: { type: "boolean", desc: "run headless" },
+      headless: { type: "boolean", desc: "run headless (default)" },
+      headed: { type: "boolean", desc: "open a visible window (any browser type)" },
       "executable-path": { key: "executablePath", type: "string", desc: "electron: path to the Electron binary" },
       "electron-arg": { key: "electronArgs", type: "string[]", desc: "electron: launch arg (repeatable)" },
       cwd: { type: "string", desc: "electron: spawn working dir" },
@@ -74,7 +75,8 @@ export const COMMANDS: CommandSpec[] = [
     flags: {
       "storage-name": { key: "storageName", type: "string", desc: "stored-session name (default 'default')" },
       browser: { key: "type", type: "string", alias: "b", desc: "chromium|firefox|webkit|camoufox" },
-      headless: { type: "boolean", desc: "run headless" },
+      headless: { type: "boolean", desc: "run headless (default)" },
+      headed: { type: "boolean", desc: "open a visible window" },
     },
     summary: "Load stored storage into a new session",
   },

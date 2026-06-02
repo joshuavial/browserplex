@@ -69,7 +69,7 @@ sessions. The daemon idle-exits once no sessions/clients remain.
 ```bash
 npm install && npm run build      # or: npm i -g browserplex  (provides the `bp` bin)
 
-bp session create web --browser chromium       # auto-spawns the daemon
+bp session create web --browser chromium       # auto-spawns the daemon (headless by default; add --headed for a window)
 bp navigate https://example.com -s web          # second process, same live session
 bp snapshot -s web --interactive                 # refs (@e1 …) for clicks/types
 bp click @e3 -s web
@@ -189,8 +189,8 @@ Caveats:
 ## Example Usage
 
 ```
-# Create a headed WebKit (Safari) session
-session_create name="safari" type="webkit" headless=false
+# Create a headed WebKit (Safari) session (sessions are headless by default; opt in with headed=true)
+session_create name="safari" type="webkit" headed=true
 
 # Navigate to a page
 browser_navigate session="safari" url="https://example.com"

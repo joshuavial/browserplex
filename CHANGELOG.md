@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.5.0] - 2026-06-02
+
+### Changed
+- **Consistent headless default ([#1]):** all browser types now default to **headless**. Previously
+  only `chromium` was headless-by-default while `firefox`/`webkit` opened a window. Electron always
+  opens a real window regardless.
+
+### Added
+- **`--headed` flag** (and MCP `headed` param) on `session create` / `storage load` — opt into a
+  visible window for any browser type. `--headless` still works as the explicit headless opt-in.
+
 ## [0.4.0] - 2026-05-30
 
 ### Added
