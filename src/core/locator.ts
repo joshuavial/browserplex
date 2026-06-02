@@ -1,12 +1,51 @@
-import type { Locator } from "playwright";
+import type { FrameLocator, Locator } from "playwright";
 import { getLocatorFromRef, isRef } from "./snapshot.js";
 import type { BrowserSession } from "./types.js";
 
 /**
- * Get a Playwright locator from a ref (@e1) or CSS selector.
- * Refs are looked up in the session's refMap from the last snapshot.
+ * Descend through one or more nested iframes via Playwright's frameLocator
+ * chain. Returns a Locator scoped to the innermost frame.
+ *
+ * Iframes (especially cross-origin like Stripe Checkout) are NOT pierced by
+ * page.locator(...) or by CSS combinators — Playwright requires an explicit
+ * frameLocator() chain. Supply each iframe selector as a separate entry in
+ * `frame` (outermost first) to walk nested iframes (e.g. Stripe Embedded
+ * Checkout outer + Stripe Elements inner).
  */
-export function getLocator(session: BrowserSession, selector: string): Locator {
+function chainFrame(session: BrowserSession, frame: string[]): FrameLocator {
+  let fl: FrameLocator = session.page.frameLocator(frame[0]);
+  for (let i = 1; i < frame.length; i++) {
+    fl = fl.frameLocator(frame[i]);
+  }
+  return fl;
+}
+
+/**
+ * Get a Playwright locator from a ref (@e1) or CSS selector. When `frame`
+ * is provided, the selector is resolved INSIDE the (possibly nested) iframe
+ * chain. Refs work both in the main frame and inside iframes — for iframe
+ * refs, the caller must pass the same `--frame` chain used by the iframe-
+ * scoped snapshot that produced the ref (so getByRole resolves inside the
+ * right scope).
+ */
+export function getLocator(
+  session: BrowserSession,
+  selector: string,
+  frame?: string[],
+): Locator {
+  if (frame && frame.length > 0) {
+    const fl = chainFrame(session, frame);
+    if (isRef(selector)) {
+      const locator = getLocatorFromRef(session.page, session.refMap, selector, fl);
+      if (!locator) {
+        throw new Error(
+          `Ref '${selector}' not found. Run browser_snapshot --frame '${frame.join("' --frame '")}' first.`,
+        );
+      }
+      return locator;
+    }
+    return fl.locator(selector);
+  }
   if (isRef(selector)) {
     const locator = getLocatorFromRef(session.page, session.refMap, selector);
     if (!locator) {
@@ -15,6 +54,18 @@ export function getLocator(session: BrowserSession, selector: string): Locator {
     return locator;
   }
   return session.page.locator(selector);
+}
+
+/**
+ * Resolve the snapshot root for an optional frame chain. Used by
+ * browserSnapshot so iframe-scoped snapshots descend into the requested
+ * iframe(s) rather than the main page.
+ */
+export function getSnapshotRoot(session: BrowserSession, frame?: string[]): Locator {
+  if (frame && frame.length > 0) {
+    return chainFrame(session, frame).locator(":root");
+  }
+  return session.page.locator(":root");
 }
 
 /**

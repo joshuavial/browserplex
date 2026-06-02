@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.6.0] - 2026-06-03
+
+### Added
+- **Cross-origin iframe support via `--frame`:** new repeatable flag on `bp snapshot`, `click`,
+  `type`, `hover`, `select`, `upload`, `fill`, `wait`, and `drag` (and the equivalent MCP `frame`
+  parameter). Pass the outermost iframe selector first; repeat the flag for nested iframes (e.g.
+  Stripe Embedded Checkout's outer frame plus its inner Stripe Elements frames). Under the hood
+  Playwright's `frameLocator()` chain pierces same-origin and cross-origin iframes that
+  `page.locator()` and CSS combinators cannot reach.
+- **Refs work inside iframes:** `bp snapshot --frame X` populates the session's `refMap` from the
+  iframe-scoped ARIA tree; follow-up `bp click @e1 --frame X` resolves the ref via
+  `FrameLocator.getByRole(...)` so the role+name lookup runs in the correct scope. Mixing a `@ref`
+  selector with a different `--frame` chain than the snapshot used will fail loudly with a hint to
+  re-snapshot.
+
+### Changed
+- `getLocatorFromRef` and the snapshot pipeline gained an optional `rootLocator` so iframe-scoped
+  ARIA snapshots can be taken without changing the main-frame contract — main-frame snapshots and
+  refs continue to behave exactly as before when `--frame` is omitted.
+
 ## [0.5.0] - 2026-06-02
 
 ### Changed

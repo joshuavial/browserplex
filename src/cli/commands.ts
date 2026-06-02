@@ -33,6 +33,16 @@ const GLOBAL_FLAGS: Record<string, FlagDef> = {
 
 const TIMEOUT: FlagDef = { type: "number", desc: "timeout in ms" };
 
+// --frame is repeatable for nested iframes (outermost first). Example:
+//   bp click "input[name=email]" --frame 'iframe[name="embedded-checkout"]'
+// Stripe Elements nest further:
+//   --frame 'iframe[name="embedded-checkout"]' --frame 'iframe[title="Secure card number input"]'
+const FRAME: FlagDef = {
+  key: "frame",
+  type: "string[]",
+  desc: "iframe selector chain (outermost first, repeatable for nested)",
+};
+
 export const COMMANDS: CommandSpec[] = [
   // ---- session ----
   {
@@ -121,6 +131,7 @@ export const COMMANDS: CommandSpec[] = [
       compact: { type: "boolean", desc: "drop empty structural nodes" },
       "max-depth": { key: "maxDepth", type: "number", desc: "max tree depth" },
       selector: { type: "string", desc: "scope to a CSS selector" },
+      frame: FRAME,
     },
     summary: "Accessibility snapshot with refs",
   },
@@ -139,7 +150,7 @@ export const COMMANDS: CommandSpec[] = [
     path: ["click"],
     tool: "browser_click",
     positionals: [{ key: "selector", required: true, desc: "ref (@e1) or CSS selector" }],
-    flags: { timeout: TIMEOUT },
+    flags: { timeout: TIMEOUT, frame: FRAME },
     summary: "Click an element",
   },
   {
@@ -149,20 +160,20 @@ export const COMMANDS: CommandSpec[] = [
       { key: "selector", required: true, desc: "ref or CSS selector" },
       { key: "text", required: true, desc: "text to type" },
     ],
-    flags: { submit: { type: "boolean", desc: "press Enter after" }, timeout: TIMEOUT },
+    flags: { submit: { type: "boolean", desc: "press Enter after" }, timeout: TIMEOUT, frame: FRAME },
     summary: "Type into an input",
   },
   {
     path: ["press"],
     tool: "browser_press_key",
     positionals: [{ key: "key", required: true, desc: "key (Enter, Escape, …)" }],
-    summary: "Press a key",
+    summary: "Press a key (lands on focused element; sequence after iframe click/type to target inside frame)",
   },
   {
     path: ["hover"],
     tool: "browser_hover",
     positionals: [{ key: "selector", required: true, desc: "ref or CSS selector" }],
-    flags: { timeout: TIMEOUT },
+    flags: { timeout: TIMEOUT, frame: FRAME },
     summary: "Hover an element",
   },
   {
@@ -172,8 +183,8 @@ export const COMMANDS: CommandSpec[] = [
       { key: "sourceSelector", required: true, desc: "source ref/selector" },
       { key: "targetSelector", required: true, desc: "target ref/selector" },
     ],
-    flags: { timeout: TIMEOUT },
-    summary: "Drag one element to another",
+    flags: { timeout: TIMEOUT, frame: FRAME },
+    summary: "Drag one element to another (source + target must share the same iframe scope)",
   },
   {
     path: ["select"],
@@ -184,6 +195,7 @@ export const COMMANDS: CommandSpec[] = [
       label: { type: "string", desc: "option label" },
       index: { type: "number", desc: "option index" },
       timeout: TIMEOUT,
+      frame: FRAME,
     },
     summary: "Select a dropdown option",
   },
@@ -191,7 +203,7 @@ export const COMMANDS: CommandSpec[] = [
     path: ["upload"],
     tool: "browser_file_upload",
     positionals: [{ key: "selector", required: true, desc: "file input ref/selector" }],
-    flags: { file: { key: "files", type: "string[]", desc: "file path (repeatable)" }, timeout: TIMEOUT },
+    flags: { file: { key: "files", type: "string[]", desc: "file path (repeatable)" }, timeout: TIMEOUT, frame: FRAME },
     summary: "Upload file(s) to an input",
   },
   {
@@ -201,8 +213,9 @@ export const COMMANDS: CommandSpec[] = [
       field: { type: "string[]", desc: "selector=value (repeatable)" },
       "fields-json": { key: "fields", type: "string", desc: "JSON array of {selector,value}" },
       timeout: TIMEOUT,
+      frame: FRAME,
     },
-    summary: "Fill multiple form fields",
+    summary: "Fill multiple form fields (all in the same iframe scope when --frame is set)",
   },
   {
     path: ["dialog"],
@@ -216,7 +229,7 @@ export const COMMANDS: CommandSpec[] = [
     path: ["wait"],
     tool: "browser_wait_for",
     positionals: [{ key: "selector", required: false, desc: "ref/selector (omit to wait for load)" }],
-    flags: { state: { type: "string", desc: "attached|detached|visible|hidden" }, timeout: TIMEOUT },
+    flags: { state: { type: "string", desc: "attached|detached|visible|hidden" }, timeout: TIMEOUT, frame: FRAME },
     summary: "Wait for an element or load",
   },
   {

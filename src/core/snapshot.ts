@@ -36,6 +36,9 @@ export interface SnapshotOptions {
   compact?: boolean;
   /** CSS selector to scope the snapshot */
   selector?: string;
+  /** Pre-built root locator (e.g. scoped to an iframe via frameLocator). When
+   * supplied, `selector` is ignored — the caller has already chosen the root. */
+  rootLocator?: Locator;
 }
 
 // Counter for generating refs
@@ -173,8 +176,11 @@ export async function getEnhancedSnapshot(
   resetRefs();
   const refs: RefMap = {};
 
-  // Get ARIA snapshot from Playwright
-  const locator = options.selector ? page.locator(options.selector) : page.locator(':root');
+  // Get ARIA snapshot from Playwright. A caller-supplied rootLocator (e.g.
+  // scoped to an iframe via frameLocator) takes precedence over `selector`.
+  const locator = options.rootLocator
+    ? options.rootLocator
+    : options.selector ? page.locator(options.selector) : page.locator(':root');
   const ariaTree = await locator.ariaSnapshot();
 
   if (!ariaTree) {
@@ -402,23 +408,32 @@ export function isRef(selector: string): boolean {
 }
 
 /**
- * Get a Playwright locator from a ref using the refMap
+ * Get a Playwright locator from a ref using the refMap. Accepts an optional
+ * `root` that lets refs from an iframe-scoped snapshot be resolved inside the
+ * same iframe — pass any object exposing getByRole (Page or FrameLocator).
+ * Without `root`, falls back to the main page.
  */
-export function getLocatorFromRef(page: Page, refMap: RefMap, selector: string): Locator | null {
+export function getLocatorFromRef(
+  page: Page,
+  refMap: RefMap,
+  selector: string,
+  root?: { getByRole: Page["getByRole"] },
+): Locator | null {
   const ref = parseRef(selector);
   if (!ref) return null;
 
   const refData = refMap[ref];
   if (!refData) return null;
 
+  const scope = root ?? page;
   let locator: Locator;
   if (refData.name) {
-    locator = page.getByRole(refData.role as any, {
+    locator = scope.getByRole(refData.role as any, {
       name: refData.name,
       exact: true
     });
   } else {
-    locator = page.getByRole(refData.role as any);
+    locator = scope.getByRole(refData.role as any);
   }
 
   if (refData.nth !== undefined) {

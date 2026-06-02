@@ -1,6 +1,6 @@
 {
   "name": "browserplex",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "MCP server + bp CLI for managing multiple named browser sessions with Playwright",
   "type": "module",
   "main": "dist/mcp/server.js",

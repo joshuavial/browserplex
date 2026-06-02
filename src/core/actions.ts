@@ -2,7 +2,24 @@ import { promises as fs } from "node:fs";
 import { sessionManager } from "./sessions.js";
 import { storageManager } from "./storage.js";
 import { getEnhancedSnapshot, getSnapshotStats } from "./snapshot.js";
-import { getLocator, withFriendlyError } from "./locator.js";
+import { getLocator, getSnapshotRoot, withFriendlyError } from "./locator.js";
+
+/**
+ * Normalize the `frame` argument to a string[] chain (outermost first), or
+ * undefined for main-frame operations. Accepts a single string (one iframe)
+ * or array of strings (nested iframes). This is the shared boundary for
+ * iframe-aware actions — every action that supports `frame` should run its
+ * input through this helper before passing to the locator helpers.
+ */
+function normalizeFrame(frame: unknown): string[] | undefined {
+  if (frame === undefined || frame === null) return undefined;
+  if (typeof frame === "string") return frame === "" ? undefined : [frame];
+  if (Array.isArray(frame)) {
+    const arr = frame.filter((v): v is string => typeof v === "string" && v !== "");
+    return arr.length > 0 ? arr : undefined;
+  }
+  throw new Error(`frame must be a string or string[], got ${typeof frame}`);
+}
 import type { ElectronApplication } from "playwright";
 import type { ActionResult, BrowserType } from "./types.js";
 
@@ -144,30 +161,46 @@ export async function browserSnapshot(args: {
   compact?: boolean;
   maxDepth?: number;
   selector?: string;
+  frame?: string | string[];
 }): Promise<ActionResult> {
   const s = sessionManager.getOrThrow(args.session);
   const title = await s.page.title();
   const url = s.page.url();
+  const frame = normalizeFrame(args.frame);
 
+  // When --frame is set, the snapshot is scoped to the (possibly nested)
+  // iframe chain. Refs generated here are NOT compatible with main-frame
+  // clicks/types — callers should use CSS selectors with the same --frame
+  // for follow-up interactions inside the same iframe.
+  const rootLocator = frame ? getSnapshotRoot(s, frame) : undefined;
   const snapshot = await getEnhancedSnapshot(s.page, {
     interactive: args.interactive ?? false,
     compact: args.compact ?? false,
     maxDepth: args.maxDepth,
-    selector: args.selector,
+    selector: frame ? undefined : args.selector,
+    rootLocator,
   });
 
-  // Store refs in session for later use with click/type/etc
+  // Store refs in session for later use with click/type/etc. Refs are
+  // role+name pairs, so the same refMap works for both main-frame and
+  // iframe-scoped resolution — the caller selects scope by passing (or
+  // omitting) --frame on the follow-up action. Caveat: a refMap populated
+  // by an iframe snapshot will not resolve sensibly against the main page,
+  // and vice versa — keep snapshot scope and action scope in sync.
   s.refMap = snapshot.refs;
 
   const stats = getSnapshotStats(snapshot.tree, snapshot.refs);
+  const frameNote = frame ? ` (scoped to iframe chain: ${frame.join(" >> ")})` : "";
 
   return {
     text:
-      `Page: ${title}\nURL: ${url}\n` +
+      `Page: ${title}\nURL: ${url}${frameNote}\n` +
       `Stats: ${stats.refs} refs, ${stats.interactive} interactive, ~${stats.tokens} tokens\n\n` +
       `${snapshot.tree}\n\n` +
-      `Use refs like @e1, @e2 with browser_click, browser_type, etc.`,
-    data: { title, url, stats },
+      (frame
+        ? `Use CSS selectors with --frame ${frame.map((f) => JSON.stringify(f)).join(" --frame ")} for clicks/types inside this iframe.`
+        : `Use refs like @e1, @e2 with browser_click, browser_type, etc.`),
+    data: { title, url, stats, frame },
   };
 }
 
@@ -224,12 +257,14 @@ export async function browserClick(args: {
   session: string;
   selector: string;
   timeout?: number;
+  frame?: string | string[];
 }): Promise<ActionResult> {
   const s = sessionManager.getOrThrow(args.session);
   const t = args.timeout ?? 5000;
-  const locator = getLocator(s, args.selector);
+  const frame = normalizeFrame(args.frame);
+  const locator = getLocator(s, args.selector, frame);
   await withFriendlyError(args.selector, () => locator.click({ timeout: t }));
-  return { text: `Clicked '${args.selector}'` };
+  return { text: `Clicked '${args.selector}'${frame ? ` (in iframe ${frame.join(" >> ")})` : ""}` };
 }
 
 export async function browserType(args: {
@@ -238,21 +273,32 @@ export async function browserType(args: {
   text: string;
   submit?: boolean;
   timeout?: number;
+  frame?: string | string[];
 }): Promise<ActionResult> {
   const s = sessionManager.getOrThrow(args.session);
   const t = args.timeout ?? 5000;
-  const locator = getLocator(s, args.selector);
+  const frame = normalizeFrame(args.frame);
+  const locator = getLocator(s, args.selector, frame);
   await withFriendlyError(args.selector, async () => {
     await locator.fill(args.text, { timeout: t });
     if (args.submit) {
       await locator.press("Enter", { timeout: t });
     }
   });
-  return { text: `Typed into '${args.selector}'${args.submit ? " and submitted" : ""}` };
+  return {
+    text:
+      `Typed into '${args.selector}'${args.submit ? " and submitted" : ""}` +
+      (frame ? ` (in iframe ${frame.join(" >> ")})` : ""),
+  };
 }
 
 export async function browserPressKey(args: { session: string; key: string }): Promise<ActionResult> {
   const s = sessionManager.getOrThrow(args.session);
+  // keyboard.press dispatches at the page level, not at an element — so it
+  // operates on whichever element currently has focus (which can be inside
+  // an iframe if the previous click/type was iframe-scoped). No --frame
+  // plumbing needed here; users sequence press after an iframe click/type
+  // and the keypress lands on the focused element regardless of frame.
   await s.page.keyboard.press(args.key);
   return { text: `Pressed '${args.key}'` };
 }
@@ -261,12 +307,14 @@ export async function browserHover(args: {
   session: string;
   selector: string;
   timeout?: number;
+  frame?: string | string[];
 }): Promise<ActionResult> {
   const s = sessionManager.getOrThrow(args.session);
   const t = args.timeout ?? 5000;
-  const locator = getLocator(s, args.selector);
+  const frame = normalizeFrame(args.frame);
+  const locator = getLocator(s, args.selector, frame);
   await withFriendlyError(args.selector, () => locator.hover({ timeout: t }));
-  return { text: `Hovering over '${args.selector}'` };
+  return { text: `Hovering over '${args.selector}'${frame ? ` (in iframe ${frame.join(" >> ")})` : ""}` };
 }
 
 export async function browserDrag(args: {
@@ -274,11 +322,16 @@ export async function browserDrag(args: {
   sourceSelector: string;
   targetSelector: string;
   timeout?: number;
+  frame?: string | string[];
 }): Promise<ActionResult> {
   const s = sessionManager.getOrThrow(args.session);
   const t = args.timeout ?? 5000;
-  const sourceLocator = getLocator(s, args.sourceSelector);
-  const targetLocator = getLocator(s, args.targetSelector);
+  // Drag both source and target inside the same iframe chain. Cross-frame
+  // drags aren't supported here — that's an unusual UX and the browser's
+  // own drag handlers usually can't span frames anyway.
+  const frame = normalizeFrame(args.frame);
+  const sourceLocator = getLocator(s, args.sourceSelector, frame);
+  const targetLocator = getLocator(s, args.targetSelector, frame);
   await withFriendlyError(args.sourceSelector, () => sourceLocator.dragTo(targetLocator, { timeout: t }));
   return { text: `Dragged '${args.sourceSelector}' to '${args.targetSelector}'` };
 }
@@ -290,10 +343,12 @@ export async function browserSelectOption(args: {
   label?: string;
   index?: number;
   timeout?: number;
+  frame?: string | string[];
 }): Promise<ActionResult> {
   const s = sessionManager.getOrThrow(args.session);
   const t = args.timeout ?? 5000;
-  const locator = getLocator(s, args.selector);
+  const frame = normalizeFrame(args.frame);
+  const locator = getLocator(s, args.selector, frame);
   const selected = await withFriendlyError(args.selector, async () => {
     if (args.value !== undefined) {
       return locator.selectOption({ value: args.value }, { timeout: t });
@@ -312,10 +367,12 @@ export async function browserFileUpload(args: {
   selector: string;
   files: string[];
   timeout?: number;
+  frame?: string | string[];
 }): Promise<ActionResult> {
   const s = sessionManager.getOrThrow(args.session);
   const t = args.timeout ?? 5000;
-  const locator = getLocator(s, args.selector);
+  const frame = normalizeFrame(args.frame);
+  const locator = getLocator(s, args.selector, frame);
   await withFriendlyError(args.selector, () => locator.setInputFiles(args.files, { timeout: t }));
   return { text: `Uploaded ${args.files.length} file(s) to '${args.selector}'` };
 }
@@ -324,14 +381,21 @@ export async function browserFillForm(args: {
   session: string;
   fields: Array<{ selector: string; value: string }>;
   timeout?: number;
+  frame?: string | string[];
 }): Promise<ActionResult> {
   const s = sessionManager.getOrThrow(args.session);
   const t = args.timeout ?? 5000;
+  // All fields share the same iframe scope — typical for multi-field forms
+  // inside one Stripe Elements iframe or one embedded checkout. For a cross-
+  // frame fill, call browser_fill_form once per frame.
+  const frame = normalizeFrame(args.frame);
   for (const field of args.fields) {
-    const locator = getLocator(s, field.selector);
+    const locator = getLocator(s, field.selector, frame);
     await locator.fill(field.value, { timeout: t });
   }
-  return { text: `Filled ${args.fields.length} form field(s)` };
+  return {
+    text: `Filled ${args.fields.length} form field(s)${frame ? ` (in iframe ${frame.join(" >> ")})` : ""}`,
+  };
 }
 
 export async function browserHandleDialog(args: {
@@ -359,15 +423,17 @@ export async function browserWaitFor(args: {
   selector?: string;
   state?: "attached" | "detached" | "visible" | "hidden";
   timeout?: number;
+  frame?: string | string[];
 }): Promise<ActionResult> {
   const s = sessionManager.getOrThrow(args.session);
   const waitState = args.state ?? "visible";
   const t = args.timeout ?? 30000;
+  const frame = normalizeFrame(args.frame);
   return withFriendlyError(args.selector ?? "page", async () => {
     if (args.selector) {
-      const locator = getLocator(s, args.selector);
+      const locator = getLocator(s, args.selector, frame);
       await locator.waitFor({ state: waitState, timeout: t });
-      return { text: `Element '${args.selector}' is ${waitState}` };
+      return { text: `Element '${args.selector}' is ${waitState}${frame ? ` (in iframe ${frame.join(" >> ")})` : ""}` };
     }
     await s.page.waitForLoadState("networkidle", { timeout: t });
     return { text: "Page load complete" };
