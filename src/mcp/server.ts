@@ -367,6 +367,27 @@ server.tool(
 );
 
 server.tool(
+  "browser_downloads",
+  "List downloads captured by the session",
+  {
+    session: z.string().describe("Session name"),
+    clear: z.boolean().default(false).describe("Clear captured download records after retrieving"),
+  },
+  async (args) => wrap(() => actions.browserDownloads(args)),
+);
+
+server.tool(
+  "browser_save_download",
+  "Save a captured download to an absolute path. If id is omitted, saves the latest download.",
+  {
+    session: z.string().describe("Session name"),
+    id: z.string().optional().describe("Download id from browser_downloads, e.g. d1. Defaults to latest."),
+    savePath: z.string().describe("Absolute path to write the downloaded file"),
+  },
+  async (args) => wrap(() => actions.browserSaveDownload(args)),
+);
+
+server.tool(
   "browser_tabs",
   "List or switch between tabs/pages in a session",
   {

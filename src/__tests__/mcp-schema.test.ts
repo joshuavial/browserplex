@@ -17,3 +17,13 @@ describe('MCP session_create schema', () => {
     expect(serverSource).toContain('startupTimeoutMs: z.number().optional()');
   });
 });
+
+describe('MCP download schema', () => {
+  it('exposes download list and save tools', () => {
+    expect(serverSource).toContain('"browser_downloads"');
+    expect(serverSource).toContain('clear: z.boolean().default(false)');
+    expect(serverSource).toContain('"browser_save_download"');
+    expect(serverSource).toContain('id: z.string().optional()');
+    expect(serverSource).toContain('savePath: z.string()');
+  });
+});

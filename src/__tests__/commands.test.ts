@@ -63,4 +63,17 @@ describe('parseCommand: headless/headed flags (gh #1)', () => {
       startupTimeoutMs: 1000,
     });
   });
+
+  it('parses download list and save commands', () => {
+    const list = parseCommand(['download', 'list', '--clear', '--session', 's']);
+    expect(list.spec.tool).toBe('browser_downloads');
+    expect(list.args).toMatchObject({ session: 's', clear: true });
+
+    const save = parseCommand(['download', 'save', 'out.txt', '--id', 'd2', '--session', 's']);
+    expect(save.spec.tool).toBe('browser_save_download');
+    expect(save.args.id).toBe('d2');
+    expect(save.args.session).toBe('s');
+    expect(String(save.args.savePath)).toMatch(/out\.txt$/);
+    expect(String(save.args.savePath).startsWith('/')).toBe(true);
+  });
 });

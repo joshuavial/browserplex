@@ -45,6 +45,8 @@ export const actionDispatch: Record<string, Action> = {
   browser_resize: (a) => actions.browserResize(a as never),
   browser_console_messages: (a) => actions.browserConsoleMessages(a as never),
   browser_network_requests: (a) => actions.browserNetworkRequests(a as never),
+  browser_downloads: (a) => actions.browserDownloads(a as never),
+  browser_save_download: (a) => actions.browserSaveDownload(a as never),
   browser_tabs: (a) => actions.browserTabs(a as never),
 };
 

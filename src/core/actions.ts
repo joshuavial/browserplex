@@ -604,6 +604,60 @@ export async function browserNetworkRequests(args: {
   return { text: `Network requests (${requests.length}):\n${lines.join("\n")}`, data: requests };
 }
 
+function publicDownload(record: BrowserSession["downloads"][number]) {
+  return {
+    id: record.id,
+    suggestedFilename: record.suggestedFilename,
+    url: record.url,
+    createdAt: record.createdAt,
+    savedPath: record.savedPath,
+  };
+}
+
+export async function browserDownloads(args: {
+  session: string;
+  clear?: boolean;
+}): Promise<ActionResult> {
+  const s = sessionManager.getOrThrow(args.session);
+  requirePageBacked(s, "browser_downloads");
+  const downloads = [...s.downloads];
+  if (args.clear) {
+    s.downloads.length = 0;
+  }
+  if (downloads.length === 0) {
+    return { text: "No downloads", data: [] };
+  }
+  const publicRecords = downloads.map(publicDownload);
+  const lines = publicRecords.map((d) =>
+    `${d.id} ${d.suggestedFilename}${d.savedPath ? ` -> ${d.savedPath}` : ""}`,
+  );
+  return { text: `Downloads (${downloads.length}):\n${lines.join("\n")}`, data: publicRecords };
+}
+
+export async function browserSaveDownload(args: {
+  session: string;
+  id?: string;
+  savePath: string;
+}): Promise<ActionResult> {
+  if (!args.savePath.startsWith("/")) {
+    throw new Error("savePath must be an absolute path");
+  }
+  const s = sessionManager.getOrThrow(args.session);
+  requirePageBacked(s, "browser_save_download");
+  const record = args.id
+    ? s.downloads.find((download) => download.id === args.id)
+    : s.downloads.at(-1);
+  if (!record) {
+    throw new Error(args.id ? `Download '${args.id}' not found` : "No downloads");
+  }
+  await record.download.saveAs(args.savePath);
+  record.savedPath = args.savePath;
+  return {
+    text: `Saved download '${record.id}' (${record.suggestedFilename}) to ${args.savePath}`,
+    data: publicDownload(record),
+  };
+}
+
 export async function browserTabs(args: {
   session: string;
   action?: "list" | "new" | "switch" | "close";

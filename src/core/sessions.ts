@@ -1,5 +1,5 @@
 import { chromium, firefox, webkit, _electron, type Browser, type BrowserContext, type Page, type ElectronApplication } from 'playwright';
-import type { BrowserSession, BrowserType, SessionInfo, ConsoleMessage, NetworkRequest, ElectronLaunchOptions, TauriLaunchOptions } from './types.js';
+import type { BrowserSession, BrowserType, SessionInfo, ConsoleMessage, NetworkRequest, DownloadRecord, ElectronLaunchOptions, TauriLaunchOptions } from './types.js';
 import { launchTauri, type TauriSession } from './tauri.js';
 
 class SessionManager {
@@ -21,7 +21,7 @@ class SessionManager {
 
     // Context options with optional storage state
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const contextOptions = storageState ? { storageState: storageState as any } : {};
+    const contextOptions = { acceptDownloads: true, ...(storageState ? { storageState: storageState as any } : {}) };
 
     if (type === 'tauri') {
       tauri = await launchTauri(launch as TauriLaunchOptions | undefined);
@@ -78,6 +78,8 @@ class SessionManager {
 
     const consoleMessages: ConsoleMessage[] = [];
     const networkRequests: NetworkRequest[] = [];
+    const downloads: DownloadRecord[] = [];
+    let nextDownloadId = 1;
 
     if (type !== 'tauri') {
       // Set up console message listener
@@ -112,6 +114,19 @@ class SessionManager {
           req.status = response.status();
         }
       });
+
+      page.on('download', (download) => {
+        downloads.push({
+          id: `d${nextDownloadId++}`,
+          suggestedFilename: download.suggestedFilename(),
+          url: download.url(),
+          createdAt: new Date().toISOString(),
+          download,
+        });
+        if (downloads.length > 100) {
+          downloads.shift();
+        }
+      });
     }
 
     const session: BrowserSession = {
@@ -123,6 +138,7 @@ class SessionManager {
       createdAt: new Date(),
       consoleMessages,
       networkRequests,
+      downloads,
       refMap: {},
       tauri,
     };

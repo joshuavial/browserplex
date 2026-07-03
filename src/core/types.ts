@@ -1,4 +1,4 @@
-import type { Browser, BrowserContext, Page, ElectronApplication } from 'playwright';
+import type { Browser, BrowserContext, Page, ElectronApplication, Download } from 'playwright';
 import type { TauriLaunchOptions, TauriSession } from './tauri.js';
 
 export type BrowserType = 'chromium' | 'firefox' | 'webkit' | 'camoufox' | 'electron' | 'tauri';
@@ -35,6 +35,15 @@ export interface NetworkRequest {
   timestamp: number;
 }
 
+export interface DownloadRecord {
+  id: string;
+  suggestedFilename: string;
+  url: string;
+  createdAt: string;
+  savedPath?: string;
+  download: Download;
+}
+
 /**
  * Ref map for element references from ARIA snapshots.
  * Derived from agent-browser by Vercel Inc. (Apache 2.0)
@@ -58,6 +67,7 @@ export interface BrowserSession {
   createdAt: Date;
   consoleMessages: ConsoleMessage[];
   networkRequests: NetworkRequest[];
+  downloads: DownloadRecord[];
   /** Cached refs from last snapshot */
   refMap: RefMap;
 }

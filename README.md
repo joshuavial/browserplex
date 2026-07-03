@@ -82,7 +82,7 @@ bp session destroy web
 Command groups (run `bp --help`, or `bp <command> --help`, for the full list):
 `bp session create|list|destroy`, `bp storage save|load|list|delete|lock|unlock`, and the browser
 verbs `navigate back snapshot screenshot click type press hover drag select upload fill dialog wait
-eval resize console network tabs`. Global flags: `-s/--session <name>`, `--json`. Notables:
+eval resize console network download tabs`. Global flags: `-s/--session <name>`, `--json`. Notables:
 `screenshot -o <file>`, `fill --field 'sel=value'` (repeatable) or `--fields-json '[…]'`,
 `eval` reads JS from the argument or stdin. For `electron` sessions, `bp electron-eval` runs JS in
 the Electron **main** process (the script body receives the Electron module as `electron`).
@@ -220,6 +220,8 @@ See [`docs/tauri.md`](docs/tauri.md) for the full command set and caveats. In br
 | `browser_resize` | Resize browser viewport |
 | `browser_console_messages` | Get console log messages |
 | `browser_network_requests` | Get network requests |
+| `browser_downloads` | List downloads captured by the session |
+| `browser_save_download` | Save a captured download to an absolute path |
 | `browser_tabs` | List, create, switch, or close tabs |
 
 ## Example Usage
@@ -257,6 +259,7 @@ session_destroy name="safari"
 - **Auto-resize screenshots** - Images automatically sized for LLM context limits
 - **Structured snapshots** - Page content with semantic markup (headings, links, buttons)
 - **Console/network capture** - Debug with captured console messages and network requests
+- **Download capture** - Track downloads and save them with `bp download save`
 - **Tab management** - Work with multiple tabs per session
 - **Graceful cleanup** - Sessions automatically closed on server shutdown
 

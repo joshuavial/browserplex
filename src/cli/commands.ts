@@ -272,6 +272,19 @@ export const COMMANDS: CommandSpec[] = [
     summary: "Get network requests",
   },
   {
+    path: ["download", "list"],
+    tool: "browser_downloads",
+    flags: { clear: { type: "boolean", desc: "clear after retrieving" } },
+    summary: "List captured downloads",
+  },
+  {
+    path: ["download", "save"],
+    tool: "browser_save_download",
+    positionals: [{ key: "savePath", required: true, desc: "absolute or cwd-relative output path" }],
+    flags: { id: { type: "string", desc: "download id (default: latest)" } },
+    summary: "Save a captured download to a path",
+  },
+  {
     path: ["tabs"],
     tool: "browser_tabs",
     positionals: [{ key: "action", required: false, desc: "list|new|switch|close (default list)" }],
@@ -434,8 +447,11 @@ function buildArgs(spec: CommandSpec, positionals: string[], flags: Record<strin
     }
   }
 
-  // screenshot --output: resolve to absolute (daemon rejects non-absolute savePath)
-  if (spec.tool === "browser_take_screenshot" && typeof args.savePath === "string") {
+  // output paths: resolve to absolute (daemon rejects non-absolute savePath)
+  if (
+    (spec.tool === "browser_take_screenshot" || spec.tool === "browser_save_download") &&
+    typeof args.savePath === "string"
+  ) {
     args.savePath = path.resolve(process.cwd(), args.savePath as string);
   }
 

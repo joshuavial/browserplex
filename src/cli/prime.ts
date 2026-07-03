@@ -85,6 +85,8 @@ bp session destroy web                      # clean up when done
   (no selector) waits for page load.
 - \`bp console -s web --json\` / \`bp network -s web --json\` read the buffers captured since the session
   started (use \`--clear\` to reset).
+- \`bp download list -s web --json\` shows captured downloads; \`bp download save -s web out.bin\`
+  saves the latest one (or pass \`--id d1\`).
 - \`bp tabs -s web list|new|switch|close\` (\`--index\`, \`--url\`).
 - A token that looks like a flag can be passed as a literal value after \`--\`:
   \`bp type "#in" -- -h\` types the text \`-h\`.
