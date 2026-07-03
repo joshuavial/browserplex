@@ -2,7 +2,7 @@
 
 > **Why this exists:** The standard Playwright MCP server doesn't support multiple concurrent users. When multiple AI agents try to use it simultaneously, they conflict over the single browser instance. Browserplex solves this by providing named sessions, allowing each agent to manage its own isolated browser session.
 
-MCP server for managing multiple named browser sessions. Built on Playwright with support for Chromium, Firefox, WebKit (Safari), and Camoufox (stealth Firefox).
+MCP server for managing multiple named browser sessions. Built on Playwright with support for Chromium, Firefox, WebKit (Safari), Camoufox (stealth Firefox), Electron, and agent-backed Tauri apps.
 
 ## Installation
 
@@ -106,6 +106,7 @@ the Electron **main** process (the script body receives the Electron module as `
 | `webkit` | Safari | Test Safari rendering, iOS compatibility |
 | `camoufox` | Firefox | Stealth browsing, anti-detection |
 | `electron` | Electron | Drive an Electron desktop app (renderer + preload bridge) |
+| `tauri` | Tauri WKWebView | Drive a trusted debug/test Tauri app through its injected automation agent |
 
 ### Driving Electron apps
 
@@ -141,6 +142,41 @@ Caveats:
 - Native OS file dialogs can't be driven by Playwright; apps should expose test hooks (use `env`).
 - `browser_navigate` is a no-op (the app loads its own URL); stored storage state does not apply;
   `browser_tabs` maps to the app's windows.
+
+### Driving Tauri apps
+
+`session_create type="tauri"` launches a trusted debug/test Tauri app and waits for the app's
+automation agent to connect back to Browserplex over `TAURI_AUTOMATION_WS`. Browserplex sets
+`TAURI_AUTOMATION=1` for the launched process. Release builds should not contain the agent.
+
+No API keys are required or used for the Browserplex Tauri automation path.
+
+CLI example against Xenota Concierge:
+
+```bash
+bp session create concierge \
+  --browser tauri \
+  --command pnpm \
+  --arg tauri \
+  --arg dev \
+  --cwd /Users/jv/projects/xenota/.worktrees/epic-tauri-automation/xenon/concierge \
+  --window-title "Xenota Concierge" \
+  --window-owner xenota-concierge
+
+bp wait "input[placeholder='morning-helper']" --session concierge
+bp screenshot --session concierge --output /tmp/concierge.png
+bp session destroy concierge
+```
+
+MCP `session_create` accepts the same launch shape: `type="tauri"`, `command`, `args`, `appPath`,
+`cwd`, `env`, `windowTitle`, `windowOwner`, and `startupTimeoutMs`.
+
+See [`docs/tauri.md`](docs/tauri.md) for the full command set and caveats. In brief:
+
+- Tauri sessions are agent-backed, not Playwright WebKit sessions.
+- `browser_snapshot` is text-only for Tauri and does not produce ARIA refs; use CSS selectors.
+- `browser_evaluate`/`bp eval` runs arbitrary renderer JavaScript; use only with trusted debug/test apps.
+- Native screenshots use full-display capture plus a crop to the Tauri window bounds, so keep the app unobscured.
 
 ## Tools
 
