@@ -52,6 +52,87 @@ function requirePageBacked(s: BrowserSession, action: string): void {
   }
 }
 
+function frameNote(frame: string[] | undefined): string {
+  return frame ? ` (in iframe ${frame.join(" >> ")})` : "";
+}
+
+async function retryAfterEscape<T>(s: BrowserSession, action: () => Promise<T>): Promise<T> {
+  try {
+    return await action();
+  } catch (error) {
+    await s.page.keyboard.press("Escape").catch(() => {});
+    return await action().catch(() => {
+      throw error;
+    });
+  }
+}
+
+async function setFormControlValue(locator: ReturnType<typeof getLocator>, text: string, timeout: number): Promise<void> {
+  await locator.waitFor({ state: "visible", timeout });
+  await locator.evaluate((element, value) => {
+    if (!(element instanceof HTMLInputElement) && !(element instanceof HTMLTextAreaElement)) {
+      throw new Error("Target is not an input or textarea");
+    }
+
+    const prototype = element instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+    const setter = Object.getOwnPropertyDescriptor(prototype, "value")?.set;
+    if (!setter) {
+      throw new Error("Unable to set element value");
+    }
+
+    setter.call(element, value);
+    element.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: value }));
+    element.dispatchEvent(new Event("change", { bubbles: true }));
+  }, text);
+}
+
+async function submitFromFocusedControl(locator: ReturnType<typeof getLocator>, timeout: number): Promise<void> {
+  const token = `__browserplexSubmit_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+  const hasForm = await locator.evaluate((element, submitToken) => {
+    const form = element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement ? element.form : null;
+    if (!form) return false;
+
+    Object.defineProperty(window, submitToken, {
+      value: false,
+      writable: true,
+      configurable: true,
+    });
+    form.addEventListener(
+      "submit",
+      () => {
+        (window as unknown as Record<string, boolean>)[submitToken] = true;
+      },
+      { capture: true, once: true },
+    );
+    return true;
+  }, token);
+
+  await locator.press("Enter", { timeout });
+
+  if (!hasForm) return;
+
+  await new Promise((resolve) => setTimeout(resolve, 25));
+  const submitted = await locator.evaluate((element, submitToken) => {
+    const state = (window as unknown as Record<string, boolean>)[submitToken] === true;
+    delete (window as unknown as Record<string, boolean>)[submitToken];
+    return state;
+  }, token);
+
+  if (submitted) return;
+
+  await locator.evaluate((element) => {
+    const form = element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement ? element.form : null;
+    if (!form) return;
+
+    if (typeof form.requestSubmit === "function") {
+      form.requestSubmit();
+      return;
+    }
+
+    form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+  });
+}
+
 export async function sessionCreate(args: {
   name: string;
   type?: BrowserType;
@@ -327,8 +408,8 @@ export async function browserClick(args: {
   }
   const frame = normalizeFrame(args.frame);
   const locator = getLocator(s, args.selector, frame);
-  await withFriendlyError(args.selector, () => locator.click({ timeout: t }));
-  return { text: `Clicked '${args.selector}'${frame ? ` (in iframe ${frame.join(" >> ")})` : ""}` };
+  await withFriendlyError(args.selector, () => retryAfterEscape(s, () => locator.click({ timeout: t })));
+  return { text: `Clicked '${args.selector}'${frameNote(frame)}` };
 }
 
 export async function browserType(args: {
@@ -352,15 +433,13 @@ export async function browserType(args: {
   const frame = normalizeFrame(args.frame);
   const locator = getLocator(s, args.selector, frame);
   await withFriendlyError(args.selector, async () => {
-    await locator.fill(args.text, { timeout: t });
+    await retryAfterEscape(s, () => setFormControlValue(locator, args.text, t));
     if (args.submit) {
-      await locator.press("Enter", { timeout: t });
+      await submitFromFocusedControl(locator, t);
     }
   });
   return {
-    text:
-      `Typed into '${args.selector}'${args.submit ? " and submitted" : ""}` +
-      (frame ? ` (in iframe ${frame.join(" >> ")})` : ""),
+    text: `Typed into '${args.selector}'${args.submit ? " and submitted" : ""}${frameNote(frame)}`,
   };
 }
 
@@ -469,10 +548,10 @@ export async function browserFillForm(args: {
   const frame = normalizeFrame(args.frame);
   for (const field of args.fields) {
     const locator = getLocator(s, field.selector, frame);
-    await locator.fill(field.value, { timeout: t });
+    await retryAfterEscape(s, () => setFormControlValue(locator, field.value, t));
   }
   return {
-    text: `Filled ${args.fields.length} form field(s)${frame ? ` (in iframe ${frame.join(" >> ")})` : ""}`,
+    text: `Filled ${args.fields.length} form field(s)${frameNote(frame)}`,
   };
 }
 
