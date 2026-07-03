@@ -33,6 +33,24 @@ describe('SessionManager', () => {
       expect(session2.name).toBe('second');
       expect(sessionManager.list()).toHaveLength(2);
     });
+
+    it('rejects tauri sessions without a launch command', async () => {
+      await expect(sessionManager.create('bad-tauri', 'tauri')).rejects.toThrow(
+        'tauri sessions require appPath or command',
+      );
+      expect(sessionManager.get('bad-tauri')).toBeUndefined();
+    });
+
+    it('cleans up failed tauri launches that never connect', async () => {
+      await expect(
+        sessionManager.create('silent-tauri', 'tauri', true, {
+          command: process.execPath,
+          args: ['-e', 'setTimeout(() => {}, 1000)'],
+          startupTimeoutMs: 100,
+        }),
+      ).rejects.toThrow('Timed out waiting for Tauri automation hello');
+      expect(sessionManager.get('silent-tauri')).toBeUndefined();
+    });
   });
 
   describe('get', () => {

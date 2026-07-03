@@ -1,6 +1,7 @@
 import type { Browser, BrowserContext, Page, ElectronApplication } from 'playwright';
+import type { TauriLaunchOptions, TauriSession } from './tauri.js';
 
-export type BrowserType = 'chromium' | 'firefox' | 'webkit' | 'camoufox' | 'electron';
+export type BrowserType = 'chromium' | 'firefox' | 'webkit' | 'camoufox' | 'electron' | 'tauri';
 
 /** Launch options used only when type === 'electron'. */
 export interface ElectronLaunchOptions {
@@ -18,6 +19,8 @@ export interface ElectronLaunchOptions {
   /** Extra environment for the launched app (e.g. test-mode hooks). */
   env?: Record<string, string>;
 }
+
+export type { TauriLaunchOptions };
 
 export interface ConsoleMessage {
   type: string;
@@ -48,9 +51,10 @@ export interface RefMap {
 export interface BrowserSession {
   name: string;
   type: BrowserType;
-  browser: Browser | BrowserContext | ElectronApplication;
+  browser: Browser | BrowserContext | ElectronApplication | TauriSession;
   context: BrowserContext;
   page: Page;
+  tauri?: TauriSession;
   createdAt: Date;
   consoleMessages: ConsoleMessage[];
   networkRequests: NetworkRequest[];

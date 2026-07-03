@@ -25,4 +25,42 @@ describe('parseCommand: headless/headed flags (gh #1)', () => {
     expect(p.spec.tool).toBe('storage_load');
     expect(p.args.headed).toBe(true);
   });
+
+  it('parses tauri launch options for session create', () => {
+    const p = parseCommand([
+      'session',
+      'create',
+      'concierge',
+      '--browser',
+      'tauri',
+      '--command',
+      'pnpm',
+      '--arg',
+      'tauri',
+      '--arg',
+      'dev',
+      '--cwd',
+      '/tmp/concierge',
+      '--env',
+      'EXTRA=1',
+      '--window-title',
+      'Xenota Concierge',
+      '--window-owner',
+      'xenota-concierge',
+      '--startup-timeout',
+      '1000',
+    ]);
+    expect(p.spec.tool).toBe('session_create');
+    expect(p.args).toMatchObject({
+      name: 'concierge',
+      type: 'tauri',
+      command: 'pnpm',
+      args: ['tauri', 'dev'],
+      cwd: '/tmp/concierge',
+      env: { EXTRA: '1' },
+      windowTitle: 'Xenota Concierge',
+      windowOwner: 'xenota-concierge',
+      startupTimeoutMs: 1000,
+    });
+  });
 });

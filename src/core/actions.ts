@@ -21,7 +21,7 @@ function normalizeFrame(frame: unknown): string[] | undefined {
   throw new Error(`frame must be a string or string[], got ${typeof frame}`);
 }
 import type { ElectronApplication } from "playwright";
-import type { ActionResult, BrowserType } from "./types.js";
+import type { ActionResult, BrowserType, BrowserSession } from "./types.js";
 
 /**
  * Core actions: one async function per tool. Each returns an ActionResult or
@@ -42,6 +42,16 @@ function resolveHeadless(args: { headless?: boolean; headed?: boolean }): boolea
   return args.headless ?? true;
 }
 
+function tauriSession(s: BrowserSession) {
+  return s.type === "tauri" ? s.tauri : undefined;
+}
+
+function requirePageBacked(s: BrowserSession, action: string): void {
+  if (s.type === "tauri") {
+    throw new Error(`${action} is not supported for tauri sessions`);
+  }
+}
+
 export async function sessionCreate(args: {
   name: string;
   type?: BrowserType;
@@ -52,6 +62,12 @@ export async function sessionCreate(args: {
   executablePath?: string;
   cwd?: string;
   env?: Record<string, string>;
+  appPath?: string;
+  command?: string;
+  args?: string[];
+  windowTitle?: string;
+  windowOwner?: string;
+  startupTimeoutMs?: number;
 }): Promise<ActionResult> {
   const browserType = args.type ?? "chromium";
   // All browser types default to headless; `headed` (or headless:false) opts into a visible window.
@@ -60,6 +76,17 @@ export async function sessionCreate(args: {
   const launch =
     browserType === "electron"
       ? { args: args.electronArgs, executablePath: args.executablePath, cwd: args.cwd, env: args.env }
+      : browserType === "tauri"
+      ? {
+          appPath: args.appPath,
+          command: args.command,
+          args: args.args,
+          cwd: args.cwd,
+          env: args.env,
+          windowTitle: args.windowTitle,
+          windowOwner: args.windowOwner,
+          startupTimeoutMs: args.startupTimeoutMs,
+        }
       : undefined;
   await sessionManager.create(args.name, browserType, useHeadless, launch);
   return { text: `Created ${browserType} session '${args.name}'${useHeadless ? "" : " (headed)"}` };
@@ -87,6 +114,7 @@ export async function storageSave(args: {
   name?: string;
 }): Promise<ActionResult> {
   const s = sessionManager.getOrThrow(args.session);
+  requirePageBacked(s, "storage_save");
   const storageName = args.name ?? "default";
   await storageManager.save(s.context, args.domain, storageName);
   return { text: `Saved session '${storageName}' for ${args.domain}` };
@@ -101,6 +129,9 @@ export async function storageLoad(args: {
   headed?: boolean;
 }): Promise<ActionResult> {
   const browserType = args.type ?? "chromium";
+  if (browserType === "tauri") {
+    throw new Error("storage_load is not supported for tauri sessions");
+  }
   const storage = args.storageName ?? "default";
   const storageState = await storageManager.load(args.domain, storage);
   const useHeadless = resolveHeadless(args); // headless by default; --headed opts in
@@ -145,12 +176,14 @@ export async function storageUnlock(args: { domain: string }): Promise<ActionRes
 
 export async function browserNavigate(args: { session: string; url: string }): Promise<ActionResult> {
   const s = sessionManager.getOrThrow(args.session);
+  requirePageBacked(s, "browser_navigate");
   await s.page.goto(args.url, { waitUntil: "domcontentloaded" });
   return { text: `Navigated to ${args.url}` };
 }
 
 export async function browserNavigateBack(args: { session: string }): Promise<ActionResult> {
   const s = sessionManager.getOrThrow(args.session);
+  requirePageBacked(s, "browser_navigate_back");
   await s.page.goBack();
   return { text: `Navigated back to ${s.page.url()}` };
 }
@@ -164,6 +197,23 @@ export async function browserSnapshot(args: {
   frame?: string | string[];
 }): Promise<ActionResult> {
   const s = sessionManager.getOrThrow(args.session);
+  const tauri = tauriSession(s);
+  if (tauri) {
+    const result = await tauri.command({
+      command: "eval",
+      expression: `({
+        title: document.title,
+        href: location.href,
+        text: document.body ? document.body.innerText : "",
+      })`,
+      timeoutMs: 5000,
+    }) as { title?: string; href?: string; text?: string };
+    const text = (result.text ?? "").slice(0, 12000);
+    return {
+      text: `Page: ${result.title ?? ""}\nURL: ${result.href ?? ""}\n\n${text}\n\nTauri snapshots are text-only in this version; ARIA refs are not available.`,
+      data: { title: result.title, url: result.href, text },
+    };
+  }
   const title = await s.page.title();
   const url = s.page.url();
   const frame = normalizeFrame(args.frame);
@@ -215,6 +265,15 @@ export async function browserTakeScreenshot(args: {
   }
 
   const s = sessionManager.getOrThrow(args.session);
+  const tauri = tauriSession(s);
+  if (tauri) {
+    const rawBuffer = await tauri.screenshot(args.savePath);
+    const base64 = rawBuffer.toString("base64");
+    return {
+      text: args.savePath ? `Saved screenshot to ${args.savePath}` : "",
+      image: { base64, mimeType: "image/png" },
+    };
+  }
   const rawBuffer = await s.page.screenshot({ fullPage: args.fullPage ?? false });
 
   if (args.savePath) {
@@ -261,6 +320,11 @@ export async function browserClick(args: {
 }): Promise<ActionResult> {
   const s = sessionManager.getOrThrow(args.session);
   const t = args.timeout ?? 5000;
+  const tauri = tauriSession(s);
+  if (tauri) {
+    await tauri.command({ command: "click", selector: args.selector, timeoutMs: t });
+    return { text: `Clicked '${args.selector}'` };
+  }
   const frame = normalizeFrame(args.frame);
   const locator = getLocator(s, args.selector, frame);
   await withFriendlyError(args.selector, () => locator.click({ timeout: t }));
@@ -277,6 +341,14 @@ export async function browserType(args: {
 }): Promise<ActionResult> {
   const s = sessionManager.getOrThrow(args.session);
   const t = args.timeout ?? 5000;
+  const tauri = tauriSession(s);
+  if (tauri) {
+    await tauri.command({ command: "type", selector: args.selector, text: args.text, timeoutMs: t });
+    if (args.submit) {
+      await tauri.command({ command: "eval", expression: "document.activeElement && document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))", timeoutMs: t });
+    }
+    return { text: `Typed into '${args.selector}'${args.submit ? " and submitted" : ""}` };
+  }
   const frame = normalizeFrame(args.frame);
   const locator = getLocator(s, args.selector, frame);
   await withFriendlyError(args.selector, async () => {
@@ -294,6 +366,7 @@ export async function browserType(args: {
 
 export async function browserPressKey(args: { session: string; key: string }): Promise<ActionResult> {
   const s = sessionManager.getOrThrow(args.session);
+  requirePageBacked(s, "browser_press_key");
   // keyboard.press dispatches at the page level, not at an element — so it
   // operates on whichever element currently has focus (which can be inside
   // an iframe if the previous click/type was iframe-scoped). No --frame
@@ -310,6 +383,7 @@ export async function browserHover(args: {
   frame?: string | string[];
 }): Promise<ActionResult> {
   const s = sessionManager.getOrThrow(args.session);
+  requirePageBacked(s, "browser_hover");
   const t = args.timeout ?? 5000;
   const frame = normalizeFrame(args.frame);
   const locator = getLocator(s, args.selector, frame);
@@ -325,6 +399,7 @@ export async function browserDrag(args: {
   frame?: string | string[];
 }): Promise<ActionResult> {
   const s = sessionManager.getOrThrow(args.session);
+  requirePageBacked(s, "browser_drag");
   const t = args.timeout ?? 5000;
   // Drag both source and target inside the same iframe chain. Cross-frame
   // drags aren't supported here — that's an unusual UX and the browser's
@@ -346,6 +421,7 @@ export async function browserSelectOption(args: {
   frame?: string | string[];
 }): Promise<ActionResult> {
   const s = sessionManager.getOrThrow(args.session);
+  requirePageBacked(s, "browser_select_option");
   const t = args.timeout ?? 5000;
   const frame = normalizeFrame(args.frame);
   const locator = getLocator(s, args.selector, frame);
@@ -370,6 +446,7 @@ export async function browserFileUpload(args: {
   frame?: string | string[];
 }): Promise<ActionResult> {
   const s = sessionManager.getOrThrow(args.session);
+  requirePageBacked(s, "browser_file_upload");
   const t = args.timeout ?? 5000;
   const frame = normalizeFrame(args.frame);
   const locator = getLocator(s, args.selector, frame);
@@ -384,6 +461,7 @@ export async function browserFillForm(args: {
   frame?: string | string[];
 }): Promise<ActionResult> {
   const s = sessionManager.getOrThrow(args.session);
+  requirePageBacked(s, "browser_fill_form");
   const t = args.timeout ?? 5000;
   // All fields share the same iframe scope — typical for multi-field forms
   // inside one Stripe Elements iframe or one embedded checkout. For a cross-
@@ -404,6 +482,7 @@ export async function browserHandleDialog(args: {
   promptText?: string;
 }): Promise<ActionResult> {
   const s = sessionManager.getOrThrow(args.session);
+  requirePageBacked(s, "browser_handle_dialog");
   s.page.once("dialog", async (dialog) => {
     if (args.action === "accept") {
       await dialog.accept(args.promptText);
@@ -428,6 +507,17 @@ export async function browserWaitFor(args: {
   const s = sessionManager.getOrThrow(args.session);
   const waitState = args.state ?? "visible";
   const t = args.timeout ?? 30000;
+  const tauri = tauriSession(s);
+  if (tauri) {
+    if (!args.selector) {
+      return { text: "Tauri automation agent is connected" };
+    }
+    if (waitState !== "attached" && waitState !== "visible") {
+      throw new Error(`tauri wait supports only attached/visible selectors, got ${waitState}`);
+    }
+    await tauri.command({ command: "waitFor", selector: args.selector, timeoutMs: t });
+    return { text: `Element '${args.selector}' is ${waitState}` };
+  }
   const frame = normalizeFrame(args.frame);
   return withFriendlyError(args.selector ?? "page", async () => {
     if (args.selector) {
@@ -442,6 +532,11 @@ export async function browserWaitFor(args: {
 
 export async function browserEvaluate(args: { session: string; script: string }): Promise<ActionResult> {
   const s = sessionManager.getOrThrow(args.session);
+  const tauri = tauriSession(s);
+  if (tauri) {
+    const result = await tauri.command({ command: "eval", expression: args.script, timeoutMs: 5000 });
+    return { text: JSON.stringify(result ?? null, null, 2), data: result };
+  }
   const result = await s.page.evaluate(args.script);
   // Preserve original formatting verbatim (incl. undefined-result behaviour).
   return { text: JSON.stringify(result, null, 2) as string, data: result };
@@ -453,6 +548,7 @@ export async function browserEvaluate(args: { session: string; script: string })
 // Same trust model as browser_evaluate, but with full Node/Electron (main) power.
 export async function electronEvaluate(args: { session: string; script: string }): Promise<ActionResult> {
   const s = sessionManager.getOrThrow(args.session);
+  requirePageBacked(s, "electron_evaluate");
   if (s.type !== "electron") {
     throw new Error(`Session '${args.session}' is not an electron session (type: ${s.type})`);
   }
@@ -469,6 +565,7 @@ export async function browserResize(args: {
   height: number;
 }): Promise<ActionResult> {
   const s = sessionManager.getOrThrow(args.session);
+  requirePageBacked(s, "browser_resize");
   await s.page.setViewportSize({ width: args.width, height: args.height });
   return { text: `Resized viewport to ${args.width}x${args.height}` };
 }
@@ -478,6 +575,7 @@ export async function browserConsoleMessages(args: {
   clear?: boolean;
 }): Promise<ActionResult> {
   const s = sessionManager.getOrThrow(args.session);
+  requirePageBacked(s, "browser_console_messages");
   const messages = [...s.consoleMessages];
   if (args.clear) {
     s.consoleMessages.length = 0;
@@ -494,6 +592,7 @@ export async function browserNetworkRequests(args: {
   clear?: boolean;
 }): Promise<ActionResult> {
   const s = sessionManager.getOrThrow(args.session);
+  requirePageBacked(s, "browser_network_requests");
   const requests = [...s.networkRequests];
   if (args.clear) {
     s.networkRequests.length = 0;
@@ -512,6 +611,7 @@ export async function browserTabs(args: {
   url?: string;
 }): Promise<ActionResult> {
   const s = sessionManager.getOrThrow(args.session);
+  requirePageBacked(s, "browser_tabs");
   const pages = s.context.pages();
   const act = args.action ?? "list";
 

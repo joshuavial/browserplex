@@ -1,35 +1,43 @@
 import { chromium, firefox, webkit, _electron, type Browser, type BrowserContext, type Page, type ElectronApplication } from 'playwright';
-import type { BrowserSession, BrowserType, SessionInfo, ConsoleMessage, NetworkRequest, ElectronLaunchOptions } from './types.js';
+import type { BrowserSession, BrowserType, SessionInfo, ConsoleMessage, NetworkRequest, ElectronLaunchOptions, TauriLaunchOptions } from './types.js';
+import { launchTauri, type TauriSession } from './tauri.js';
 
 class SessionManager {
   private sessions: Map<string, BrowserSession> = new Map();
 
-  async create(name: string, type: BrowserType = 'chromium', headless: boolean = true, launch?: ElectronLaunchOptions): Promise<BrowserSession> {
+  async create(name: string, type: BrowserType = 'chromium', headless: boolean = true, launch?: ElectronLaunchOptions | TauriLaunchOptions): Promise<BrowserSession> {
     return this.createWithStorage(name, type, headless, undefined, launch);
   }
 
-  async createWithStorage(name: string, type: BrowserType = 'chromium', headless: boolean = true, storageState?: object, launch?: ElectronLaunchOptions): Promise<BrowserSession> {
+  async createWithStorage(name: string, type: BrowserType = 'chromium', headless: boolean = true, storageState?: object, launch?: ElectronLaunchOptions | TauriLaunchOptions): Promise<BrowserSession> {
     if (this.sessions.has(name)) {
       throw new Error(`Session '${name}' already exists`);
     }
 
-    let browser: Browser | BrowserContext | ElectronApplication;
+    let browser: Browser | BrowserContext | ElectronApplication | TauriSession;
     let context: BrowserContext;
     let page: Page;
+    let tauri: TauriSession | undefined;
 
     // Context options with optional storage state
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const contextOptions = storageState ? { storageState: storageState as any } : {};
 
-    if (type === 'electron') {
+    if (type === 'tauri') {
+      tauri = await launchTauri(launch as TauriLaunchOptions | undefined);
+      browser = tauri;
+      context = undefined as unknown as BrowserContext;
+      page = undefined as unknown as Page;
+    } else if (type === 'electron') {
+      const electronLaunch = launch as ElectronLaunchOptions | undefined;
       // Drive an Electron app. The window from firstWindow() is a normal Playwright Page,
       // so every page-centric action works unchanged. headless and storageState do not
       // apply to an Electron launch and are ignored.
       const app = await _electron.launch({
-        args: launch?.args ?? ['.'],
-        executablePath: launch?.executablePath,
-        cwd: launch?.cwd,
-        env: launch?.env ? { ...process.env, ...launch.env } as Record<string, string> : undefined,
+        args: electronLaunch?.args ?? ['.'],
+        executablePath: electronLaunch?.executablePath,
+        cwd: electronLaunch?.cwd,
+        env: electronLaunch?.env ? { ...process.env, ...electronLaunch.env } as Record<string, string> : undefined,
       });
       try {
         // If firstWindow()/context() throws, the app is launched but never stored in the
@@ -71,38 +79,40 @@ class SessionManager {
     const consoleMessages: ConsoleMessage[] = [];
     const networkRequests: NetworkRequest[] = [];
 
-    // Set up console message listener
-    page.on('console', (msg) => {
-      consoleMessages.push({
-        type: msg.type(),
-        text: msg.text(),
-        timestamp: Date.now(),
+    if (type !== 'tauri') {
+      // Set up console message listener
+      page.on('console', (msg) => {
+        consoleMessages.push({
+          type: msg.type(),
+          text: msg.text(),
+          timestamp: Date.now(),
+        });
+        // Keep only last 1000 messages
+        if (consoleMessages.length > 1000) {
+          consoleMessages.shift();
+        }
       });
-      // Keep only last 1000 messages
-      if (consoleMessages.length > 1000) {
-        consoleMessages.shift();
-      }
-    });
 
-    // Set up network request listener
-    page.on('request', (request) => {
-      networkRequests.push({
-        url: request.url(),
-        method: request.method(),
-        timestamp: Date.now(),
+      // Set up network request listener
+      page.on('request', (request) => {
+        networkRequests.push({
+          url: request.url(),
+          method: request.method(),
+          timestamp: Date.now(),
+        });
+        // Keep only last 1000 requests
+        if (networkRequests.length > 1000) {
+          networkRequests.shift();
+        }
       });
-      // Keep only last 1000 requests
-      if (networkRequests.length > 1000) {
-        networkRequests.shift();
-      }
-    });
 
-    page.on('response', (response) => {
-      const req = networkRequests.find(r => r.url === response.url() && !r.status);
-      if (req) {
-        req.status = response.status();
-      }
-    });
+      page.on('response', (response) => {
+        const req = networkRequests.find(r => r.url === response.url() && !r.status);
+        if (req) {
+          req.status = response.status();
+        }
+      });
+    }
 
     const session: BrowserSession = {
       name,
@@ -114,6 +124,7 @@ class SessionManager {
       consoleMessages,
       networkRequests,
       refMap: {},
+      tauri,
     };
 
     this.sessions.set(name, session);
@@ -140,7 +151,9 @@ class SessionManager {
 
     this.sessions.delete(name);
     try {
-      if (session.type === 'electron') {
+      if (session.type === 'tauri' && session.tauri) {
+        await session.tauri.close();
+      } else if (session.type === 'electron') {
         // Closing the ElectronApplication tears down its context+window; calling
         // context.close() on an Electron context is redundant/erroneous, so skip it.
         await (session.browser as ElectronApplication).close();
@@ -161,7 +174,9 @@ class SessionManager {
       result.push({
         name: session.name,
         type: session.type,
-        url: session.page.url(),
+        url: session.type === 'tauri'
+          ? String(session.tauri?.hello.href ?? "")
+          : session.page.url(),
         createdAt: session.createdAt.toISOString(),
       });
     }
