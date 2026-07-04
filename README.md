@@ -176,7 +176,7 @@ See [`docs/tauri.md`](docs/tauri.md) for the full command set and caveats. In br
 - Tauri sessions are agent-backed, not Playwright WebKit sessions.
 - `browser_snapshot` is text-only for Tauri and does not produce ARIA refs; use CSS selectors.
 - `browser_evaluate`/`bp eval` runs arbitrary renderer JavaScript; use only with trusted debug/test apps.
-- Native screenshots use full-display capture plus a crop to the Tauri window bounds, so keep the app unobscured.
+- Screenshots render from inside the trusted webview first, avoiding macOS WKWebView black-window OS captures.
 
 ## Tools
 

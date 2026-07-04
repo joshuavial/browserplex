@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { createRequire } from "node:module";
 import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { createServer, type Server, type Socket } from "node:net";
 import { tmpdir } from "node:os";
@@ -6,6 +7,9 @@ import { join, resolve } from "node:path";
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 
 const PROTOCOL = "xenota.concierge.automation.v0";
+const require = createRequire(import.meta.url);
+const HTML2CANVAS_PATH = require.resolve("html2canvas/dist/html2canvas.min.js");
+let html2canvasSource: Promise<string> | undefined;
 
 export interface TauriLaunchOptions {
   appPath?: string;
@@ -35,7 +39,7 @@ type Pending = {
   timer: NodeJS.Timeout;
 };
 
-function encodeFrame(payload: string): Buffer {
+export function encodeFrame(payload: string): Buffer {
   const body = Buffer.from(payload);
   if (body.length < 126) {
     return Buffer.concat([Buffer.from([0x81, body.length]), body]);
@@ -47,10 +51,15 @@ function encodeFrame(payload: string): Buffer {
     header.writeUInt16BE(body.length, 2);
     return Buffer.concat([header, body]);
   }
-  throw new Error("Tauri automation frame too large");
+  const header = Buffer.alloc(10);
+  header[0] = 0x81;
+  header[1] = 127;
+  header.writeUInt32BE(0, 2);
+  header.writeUInt32BE(body.length, 6);
+  return Buffer.concat([header, body]);
 }
 
-function decodeFrame(buffer: Buffer): { text?: string; close?: boolean; bytes: number } | null {
+export function decodeFrame(buffer: Buffer): { text?: string; close?: boolean; bytes: number } | null {
   if (buffer.length < 2) return null;
   const opcode = buffer[0] & 0x0f;
   if (opcode === 0x8) return { close: true, bytes: 2 };
@@ -61,7 +70,14 @@ function decodeFrame(buffer: Buffer): { text?: string; close?: boolean; bytes: n
     length = buffer.readUInt16BE(2);
     offset = 4;
   } else if (length === 127) {
-    throw new Error("Large Tauri automation frames are not supported");
+    if (buffer.length < 10) return null;
+    const high = buffer.readUInt32BE(2);
+    const low = buffer.readUInt32BE(6);
+    if (high !== 0) {
+      throw new Error("Tauri automation frame too large");
+    }
+    length = low;
+    offset = 10;
   }
   const masked = (buffer[1] & 0x80) !== 0;
   const maskOffset = masked ? 4 : 0;
@@ -73,6 +89,11 @@ function decodeFrame(buffer: Buffer): { text?: string; close?: boolean; bytes: n
     payload = Buffer.from(payload.map((byte, index) => byte ^ mask[index % 4]));
   }
   return { text: payload.toString("utf8"), bytes: total };
+}
+
+async function getHtml2CanvasSource(): Promise<string> {
+  html2canvasSource ??= readFile(HTML2CANVAS_PATH, "utf8");
+  return html2canvasSource;
 }
 
 async function closeServer(server: Server): Promise<void> {
@@ -299,6 +320,86 @@ async function nativeScreenshot(options: TauriLaunchOptions, savePath?: string):
   return buffer;
 }
 
+function pngBufferFromDataUrl(dataUrl: string): Buffer {
+  const match = /^data:image\/png;base64,([A-Za-z0-9+/=]+)$/.exec(dataUrl);
+  if (!match) {
+    throw new Error(`Tauri webview screenshot did not return a PNG data URL: ${dataUrl.slice(0, 120)}`);
+  }
+  return Buffer.from(match[1], "base64");
+}
+
+async function html2canvasScreenshot(
+  command: (payload: Record<string, unknown>) => Promise<unknown>,
+): Promise<Buffer> {
+  const html2canvas = await getHtml2CanvasSource();
+  const expression = `(
+    async () => {
+      if (typeof window.html2canvas !== "function") {
+        (0, eval)(${JSON.stringify(`${html2canvas}\n//# sourceURL=browserplex-html2canvas.js`)});
+      }
+      if (typeof window.html2canvas !== "function") {
+        throw new Error("html2canvas did not install in the Tauri webview");
+      }
+
+      const width = Math.max(1, Math.ceil(window.innerWidth || document.documentElement.clientWidth || 1));
+      const height = Math.max(1, Math.ceil(window.innerHeight || document.documentElement.clientHeight || 1));
+      const target = document.body || document.documentElement;
+      const canvas = await window.html2canvas(target, {
+        backgroundColor: null,
+        logging: false,
+        scale: 1,
+        useCORS: true,
+        allowTaint: true,
+        windowWidth: width,
+        windowHeight: height,
+        x: window.scrollX || 0,
+        y: window.scrollY || 0,
+        width,
+        height
+      });
+      if (!canvas.width || !canvas.height) {
+        throw new Error(\`html2canvas returned an empty canvas: \${canvas.width}x\${canvas.height}, viewport \${width}x\${height}, target \${target.tagName}\`);
+      }
+      const dataUrl = canvas.toDataURL("image/png");
+      if (dataUrl === "data:,") {
+        throw new Error(\`html2canvas could not export canvas: \${canvas.width}x\${canvas.height}, viewport \${width}x\${height}, target \${target.tagName}\`);
+      }
+      return dataUrl;
+    }
+  )()`;
+  const result = await command({ command: "eval", expression, timeoutMs: 30000 }) as { value?: unknown };
+  if (typeof result.value !== "string") {
+    throw new Error("Tauri webview screenshot returned no PNG data");
+  }
+  return pngBufferFromDataUrl(result.value);
+}
+
+async function nativeWebviewScreenshot(
+  command: (payload: Record<string, unknown>) => Promise<unknown>,
+): Promise<Buffer> {
+  const result = await command({ command: "screenshot", timeoutMs: 30000 }) as { dataUrl?: unknown };
+  if (typeof result.dataUrl !== "string") {
+    throw new Error("Tauri native webview screenshot returned no PNG data");
+  }
+  return pngBufferFromDataUrl(result.dataUrl);
+}
+
+export async function webviewScreenshot(
+  command: (payload: Record<string, unknown>) => Promise<unknown>,
+  savePath?: string,
+): Promise<Buffer> {
+  let buffer: Buffer;
+  try {
+    buffer = await html2canvasScreenshot(command);
+  } catch {
+    buffer = await nativeWebviewScreenshot(command);
+  }
+  if (savePath) {
+    await writeFile(savePath, buffer);
+  }
+  return buffer;
+}
+
 export async function launchTauri(options: TauriLaunchOptions = {}): Promise<TauriSession> {
   const agent = await createAgentServer();
   const child = launchChild(options, agent.wsUrl);
@@ -321,7 +422,7 @@ export async function launchTauri(options: TauriLaunchOptions = {}): Promise<Tau
       server: agent.server,
       socket,
       command: agent.command,
-      screenshot: (savePath?: string) => nativeScreenshot(options, savePath),
+      screenshot: (savePath?: string) => webviewScreenshot(agent.command, savePath),
       async close() {
         socket.destroy();
         await terminate(child);

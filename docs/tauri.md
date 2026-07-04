@@ -58,9 +58,13 @@ Unsupported Playwright-only actions return explicit errors for `tauri` sessions.
 
 ## Screenshots
 
-Tauri screenshots use native macOS pixels. On macOS Tahoe, per-window `screencapture -l` and rect `screencapture -R` are unreliable in the Xenota runner, so Browserplex captures the full display with `screencapture -x` and crops to the app window bounds from `CGWindowListCopyWindowInfo`.
+Tauri screenshots render from inside the trusted webview first. Browserplex injects its locally
+bundled `html2canvas` browser build through the automation agent, renders the current viewport to a
+canvas, receives a PNG data URL, and writes that PNG when `--output`/`savePath` is set.
 
-This means an overlapping frontmost window can be captured in the crop. Keep the Tauri window unobscured for screenshot assertions.
+This path avoids macOS WKWebView black-window captures from `screencapture`. If canvas export is not
+available in the webview, Browserplex falls back to the Concierge debug automation command that uses
+native `WKWebView.takeSnapshot` and returns a PNG over the same trusted loopback channel.
 
 ## Eval Safety
 
