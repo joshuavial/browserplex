@@ -222,10 +222,16 @@ async function createAgentServer(): Promise<{
           return;
         }
         const id = nextId++;
+        // Transport floor: the injected agent already honours payload.timeoutMs as its own
+        // selector-wait budget, so the WS round-trip needs headroom beyond it. A live app
+        // doing real async work (e.g. a discovery scan re-render) can briefly block the
+        // webview main thread; a tight 5s transport timeout surfaced that as intermittent
+        // command failures. Give every command at least 15s of transport window. (xc-3koga)
+        const transportTimeoutMs = Math.max(Number(payload.timeoutMs) || 0, 15000);
         const timer = setTimeout(() => {
           waiting.delete(id);
           reject(new Error(`Timed out waiting for Tauri command ${String(payload.command)}`));
-        }, Number(payload.timeoutMs) || 5000);
+        }, transportTimeoutMs);
         waiting.set(id, { resolve, reject, timer });
         socket.write(encodeFrame(JSON.stringify({ id, ...payload })));
       });

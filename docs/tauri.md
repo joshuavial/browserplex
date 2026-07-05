@@ -56,6 +56,8 @@ Unsupported Playwright-only actions return explicit errors for `tauri` sessions.
 
 `bp snapshot` is a text/DOM summary in this version. It does not produce ARIA refs such as `@e1`, so follow-up `click` and `type` calls must use CSS selectors.
 
+`bp click` and `bp type` auto-wait for the selector (up to `--timeout`, default 5s) before acting, so you do not need a separate `bp wait` when a control mounts asynchronously (e.g. a modal opening). The click is dispatched synchronously, so once the command returns the click has fired. The automation agent also reconnects if its controller socket drops, so a transient disconnect does not leave the session permanently stale.
+
 ## Screenshots
 
 Tauri screenshots render from inside the trusted webview first. Browserplex injects its locally
