@@ -1,15 +1,15 @@
 import { chromium, firefox, webkit, _electron, type Browser, type BrowserContext, type Page, type ElectronApplication } from 'playwright';
-import type { BrowserSession, BrowserType, SessionInfo, ConsoleMessage, NetworkRequest, DownloadRecord, ElectronLaunchOptions, TauriLaunchOptions } from './types.js';
+import type { BrowserSession, BrowserType, SessionInfo, ConsoleMessage, NetworkRequest, DownloadRecord, ChromiumLaunchOptions, ElectronLaunchOptions, TauriLaunchOptions } from './types.js';
 import { launchTauri, type TauriSession } from './tauri.js';
 
 class SessionManager {
   private sessions: Map<string, BrowserSession> = new Map();
 
-  async create(name: string, type: BrowserType = 'chromium', headless: boolean = true, launch?: ElectronLaunchOptions | TauriLaunchOptions): Promise<BrowserSession> {
+  async create(name: string, type: BrowserType = 'chromium', headless: boolean = true, launch?: ChromiumLaunchOptions | ElectronLaunchOptions | TauriLaunchOptions): Promise<BrowserSession> {
     return this.createWithStorage(name, type, headless, undefined, launch);
   }
 
-  async createWithStorage(name: string, type: BrowserType = 'chromium', headless: boolean = true, storageState?: object, launch?: ElectronLaunchOptions | TauriLaunchOptions): Promise<BrowserSession> {
+  async createWithStorage(name: string, type: BrowserType = 'chromium', headless: boolean = true, storageState?: object, launch?: ChromiumLaunchOptions | ElectronLaunchOptions | TauriLaunchOptions): Promise<BrowserSession> {
     if (this.sessions.has(name)) {
       throw new Error(`Session '${name}' already exists`);
     }
@@ -50,7 +50,8 @@ class SessionManager {
         throw e;
       }
     } else if (type === 'chromium') {
-      browser = await chromium.launch({ headless });
+      const chromiumLaunch = launch as ChromiumLaunchOptions | undefined;
+      browser = await chromium.launch({ headless, args: chromiumLaunch?.args });
       context = await browser.newContext(contextOptions);
       page = await context.newPage();
     } else if (type === 'firefox') {

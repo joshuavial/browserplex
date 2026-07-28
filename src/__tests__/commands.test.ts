@@ -20,6 +20,24 @@ describe('parseCommand: headless/headed flags (gh #1)', () => {
     expect(p.args.headless).toBe(true);
   });
 
+  it('parses repeatable chromium launch arguments', () => {
+    const p = parseCommand([
+      'session',
+      'create',
+      'dictation',
+      '--browser',
+      'chromium',
+      '--browser-arg',
+      '--use-fake-device-for-media-stream',
+      '--browser-arg',
+      '--use-file-for-fake-audio-capture=/tmp/voice.wav',
+    ]);
+    expect(p.args.browserArgs).toEqual([
+      '--use-fake-device-for-media-stream',
+      '--use-file-for-fake-audio-capture=/tmp/voice.wav',
+    ]);
+  });
+
   it('storage load also accepts --headed', () => {
     const p = parseCommand(['storage', 'load', 's', 'example.com', '--headed']);
     expect(p.spec.tool).toBe('storage_load');

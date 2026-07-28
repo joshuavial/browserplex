@@ -138,6 +138,8 @@ export async function sessionCreate(args: {
   type?: BrowserType;
   headless?: boolean;
   headed?: boolean;
+  // chromium-only process arguments (ignored for other types)
+  browserArgs?: string[];
   // electron-only launch options (ignored for other types)
   electronArgs?: string[];
   executablePath?: string;
@@ -155,7 +157,9 @@ export async function sessionCreate(args: {
   // Electron always opens a real window regardless.
   const useHeadless = browserType === "electron" ? false : resolveHeadless(args);
   const launch =
-    browserType === "electron"
+    browserType === "chromium"
+      ? { args: args.browserArgs }
+      : browserType === "electron"
       ? { args: args.electronArgs, executablePath: args.executablePath, cwd: args.cwd, env: args.env }
       : browserType === "tauri"
       ? {
