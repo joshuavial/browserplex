@@ -55,6 +55,7 @@ server.tool(
     type: z.enum(["chromium", "firefox", "webkit", "camoufox", "electron", "tauri"]).default("chromium").describe("Browser type: chromium (default), firefox, webkit (Safari), camoufox (stealth Firefox), electron, or tauri (agent-backed Tauri app)"),
     headless: z.boolean().optional().describe("Run headless. Default: true for browser types that support it (electron/tauri open real app windows regardless)"),
     headed: z.boolean().optional().describe("Open a visible browser window (opt-in; overrides the headless default for any browser type)"),
+    browserArgs: z.array(z.string()).optional().describe("chromium only: raw process args, e.g. deterministic fake-media flags"),
     electronArgs: z.array(z.string()).optional().describe("electron only: args passed to the Electron launch (default ['.']), e.g. the path to the target app"),
     executablePath: z.string().optional().describe("electron only: path to the Electron binary to launch (e.g. the target app's node_modules/.bin/electron). Selects WHICH Electron runs; if omitted, falls back to browserplex's dev-only bundled electron"),
     appPath: z.string().optional().describe("tauri only: path to the debug app binary to launch"),

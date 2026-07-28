@@ -53,6 +53,7 @@ export const COMMANDS: CommandSpec[] = [
       browser: { key: "type", type: "string", alias: "b", desc: "chromium|firefox|webkit|camoufox|electron|tauri" },
       headless: { type: "boolean", desc: "run headless (default)" },
       headed: { type: "boolean", desc: "open a visible window (any browser type)" },
+      "browser-arg": { key: "browserArgs", type: "string[]", desc: "chromium: process arg (repeatable)" },
       "executable-path": { key: "executablePath", type: "string", desc: "electron: path to the Electron binary" },
       "electron-arg": { key: "electronArgs", type: "string[]", desc: "electron: launch arg (repeatable)" },
       "app-path": { key: "appPath", type: "string", desc: "tauri: debug app binary path" },

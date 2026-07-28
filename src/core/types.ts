@@ -3,6 +3,12 @@ import type { TauriLaunchOptions, TauriSession } from './tauri.js';
 
 export type BrowserType = 'chromium' | 'firefox' | 'webkit' | 'camoufox' | 'electron' | 'tauri';
 
+/** Launch options used only when type === 'chromium'. */
+export interface ChromiumLaunchOptions {
+  /** Raw Chromium process arguments, e.g. fake-media flags for deterministic tests. */
+  args?: string[];
+}
+
 /** Launch options used only when type === 'electron'. */
 export interface ElectronLaunchOptions {
   /** Args passed to electron (default ['.']). Typically the path to the target app. */

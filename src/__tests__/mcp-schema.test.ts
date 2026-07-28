@@ -7,6 +7,10 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const serverSource = readFileSync(path.join(__dirname, '..', 'mcp', 'server.ts'), 'utf8');
 
 describe('MCP session_create schema', () => {
+  it('exposes chromium launch arguments', () => {
+    expect(serverSource).toContain('browserArgs: z.array(z.string()).optional()');
+  });
+
   it('exposes tauri launch options', () => {
     expect(serverSource).toContain('"tauri"');
     expect(serverSource).toContain('appPath: z.string().optional()');
