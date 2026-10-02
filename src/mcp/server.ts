@@ -194,6 +194,17 @@ server.tool(
   async (args) => wrap(() => actions.browserTakeScreenshot(args)),
 );
 
+server.tool(
+  "browser_content",
+  "Serialize the current page in Playwright's isolated utility world and write a byte-capped HTML file. Returns only a path, byte count, SHA-256 digest, and truncation flag.",
+  {
+    session: z.string().describe("Session name"),
+    savePath: z.string().describe("Absolute output path. Parent directory must already exist."),
+    maxBytes: z.number().int().min(1).max(2 * 1024 * 1024).default(2 * 1024 * 1024).describe("Maximum bytes to write (default and hard maximum 2097152)"),
+  },
+  async (args) => wrap(() => actions.browserContent(args)),
+);
+
 // ---- Interaction ----
 server.tool(
   "browser_click",

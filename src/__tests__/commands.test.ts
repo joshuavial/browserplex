@@ -94,4 +94,27 @@ describe('parseCommand: headless/headed flags (gh #1)', () => {
     expect(String(save.args.savePath)).toMatch(/out\.txt$/);
     expect(String(save.args.savePath).startsWith('/')).toBe(true);
   });
+
+  it('parses capped page content output', () => {
+    const parsed = parseCommand([
+      'content',
+      '--output',
+      'page.html',
+      '--max-bytes',
+      '1024',
+      '--session',
+      's',
+    ]);
+    expect(parsed.spec.tool).toBe('browser_content');
+    expect(parsed.args.session).toBe('s');
+    expect(parsed.args.maxBytes).toBe(1024);
+    expect(String(parsed.args.savePath)).toMatch(/page\.html$/);
+    expect(String(parsed.args.savePath).startsWith('/')).toBe(true);
+  });
+
+  it('requires an output file for page content', () => {
+    expect(() => parseCommand(['content', '--session', 's'])).toThrow(
+      'content needs --output <path>',
+    );
+  });
 });

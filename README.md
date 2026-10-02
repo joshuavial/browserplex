@@ -196,6 +196,12 @@ See [`docs/tauri.md`](docs/tauri.md) for the full command set and caveats. In br
 | `browser_navigate_back` | Go back in browser history |
 | `browser_snapshot` | Accessibility tree snapshot with element refs (@e1, @e2) for reliable clicks/types |
 | `browser_take_screenshot` | Capture screenshot (auto-resized for LLM context; optional `savePath` writes the un-resized PNG to disk) |
+| `browser_content` | Capture isolated-world page HTML to a byte-capped file with a SHA-256 receipt |
+
+`browser_content` / `bp content --output page.html` serializes the rendered main-frame DOM through
+Playwright's isolated utility world, so page JavaScript cannot replace the serializer. The default and
+hard maximum are 2 MiB; the receipt reports the output path, exact bytes written, SHA-256, and whether
+the file is a truncated prefix. The HTML payload is written only to the file, never returned inline.
 
 ### Interaction
 

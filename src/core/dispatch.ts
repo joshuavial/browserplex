@@ -28,6 +28,7 @@ export const actionDispatch: Record<string, Action> = {
   browser_navigate_back: (a) => actions.browserNavigateBack(a as never),
   browser_snapshot: (a) => actions.browserSnapshot(a as never),
   browser_take_screenshot: (a) => actions.browserTakeScreenshot(a as never),
+  browser_content: (a) => actions.browserContent(a as never),
   // interaction
   browser_click: (a) => actions.browserClick(a as never),
   browser_type: (a) => actions.browserType(a as never),

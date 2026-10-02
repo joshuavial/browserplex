@@ -1,4 +1,6 @@
+import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
+import { isAbsolute } from "node:path";
 import { sessionManager } from "./sessions.js";
 import { storageManager } from "./storage.js";
 import { getEnhancedSnapshot, getSnapshotStats } from "./snapshot.js";
@@ -55,6 +57,8 @@ function requirePageBacked(s: BrowserSession, action: string): void {
 function frameNote(frame: string[] | undefined): string {
   return frame ? ` (in iframe ${frame.join(" >> ")})` : "";
 }
+
+const MAX_CONTENT_CAPTURE_BYTES = 2 * 1024 * 1024;
 
 async function retryAfterEscape<T>(s: BrowserSession, action: () => Promise<T>): Promise<T> {
   try {
@@ -392,6 +396,41 @@ export async function browserTakeScreenshot(args: {
   return {
     text: args.savePath ? `Saved screenshot to ${args.savePath}` : "",
     image: { base64, mimeType: "image/png" },
+  };
+}
+
+export async function browserContent(args: {
+  session: string;
+  savePath: string;
+  maxBytes?: number;
+}): Promise<ActionResult> {
+  if (typeof args.savePath !== "string" || !isAbsolute(args.savePath)) {
+    throw new Error("savePath must be an absolute path");
+  }
+  const maxBytes = args.maxBytes ?? MAX_CONTENT_CAPTURE_BYTES;
+  if (!Number.isSafeInteger(maxBytes) || maxBytes < 1 || maxBytes > MAX_CONTENT_CAPTURE_BYTES) {
+    throw new Error(`maxBytes must be an integer between 1 and ${MAX_CONTENT_CAPTURE_BYTES}`);
+  }
+
+  const s = sessionManager.getOrThrow(args.session);
+  requirePageBacked(s, "browser_content");
+
+  // Playwright serializes frame content in its isolated utility world. This is
+  // deliberately not page.evaluate(): page-owned JavaScript may replace the
+  // main world's serializers, encoders, and built-ins.
+  const serialized = Buffer.from(await s.page.mainFrame().content(), "utf8");
+  const content = serialized.subarray(0, maxBytes);
+  await fs.writeFile(args.savePath, content);
+
+  const receipt = {
+    path: args.savePath,
+    bytes: content.byteLength,
+    sha256: createHash("sha256").update(content).digest("hex"),
+    truncated: serialized.byteLength > maxBytes,
+  };
+  return {
+    text: `Captured ${receipt.bytes} bytes to ${receipt.path} (sha256 ${receipt.sha256}, truncated: ${receipt.truncated})`,
+    data: receipt,
   };
 }
 
