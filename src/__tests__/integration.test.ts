@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { spawn, type ChildProcess } from 'child_process';
+import { createServer, type Server } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { createInterface, type Interface } from 'readline';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -9,6 +11,8 @@ const serverPath = join(__dirname, '../../dist/mcp/server.js');
 
 describe('MCP Server Integration', () => {
   let server: ChildProcess;
+  let fixtureServer: Server;
+  let fixtureBaseUrl: string;
   let rl: Interface;
   let requestId = 0;
   const pending = new Map<number, (response: any) => void>();
@@ -31,6 +35,28 @@ describe('MCP Server Integration', () => {
   }
 
   beforeAll(async () => {
+    fixtureServer = createServer((_request, response) => {
+      response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+      response.end(`<!doctype html>
+        <html>
+          <head>
+            <title>Browserplex Fixture</title>
+            <style>body { font: 18px sans-serif; padding: 4rem; } main { max-width: 40rem; }</style>
+          </head>
+          <body>
+            <main>
+              <h1>Browserplex Fixture</h1>
+              <p>Deterministic local content for browser integration tests.</p>
+              <a href="/linked">Fixture link</a>
+              <textarea name="q" aria-label="Search"></textarea>
+            </main>
+          </body>
+        </html>`);
+    });
+    await new Promise<void>((resolve) => fixtureServer.listen(0, '127.0.0.1', resolve));
+    const address = fixtureServer.address() as AddressInfo;
+    fixtureBaseUrl = `http://127.0.0.1:${address.port}`;
+
     server = spawn('node', [serverPath], {
       stdio: ['pipe', 'pipe', 'pipe'],
     });
@@ -60,6 +86,9 @@ describe('MCP Server Integration', () => {
 
     server.kill('SIGTERM');
     rl.close();
+    await new Promise<void>((resolve, reject) => {
+      fixtureServer.close((error) => error ? reject(error) : resolve());
+    });
   });
 
   describe('Session Lifecycle', () => {
@@ -101,10 +130,10 @@ describe('MCP Server Integration', () => {
     it('navigates to a URL', async () => {
       const result = await toolCall('browser_navigate', {
         session: 'integration-test',
-        url: 'https://example.com',
+        url: fixtureBaseUrl,
       });
 
-      expect(getTextContent(result)).toBe('Navigated to https://example.com');
+      expect(getTextContent(result)).toBe(`Navigated to ${fixtureBaseUrl}`);
     });
 
     it('returns snapshot of page content', async () => {
@@ -114,16 +143,16 @@ describe('MCP Server Integration', () => {
       const text = getTextContent(result);
 
       // ARIA snapshot format
-      expect(text).toContain('Page: Example Domain');
-      expect(text).toContain('URL: https://example.com');
-      expect(text).toContain('heading "Example Domain"');
+      expect(text).toContain('Page: Browserplex Fixture');
+      expect(text).toContain(`URL: ${fixtureBaseUrl}`);
+      expect(text).toContain('heading "Browserplex Fixture"');
       expect(text).toContain('[ref=');  // Should have refs
     });
 
     it('fails to navigate nonexistent session', async () => {
       const result = await toolCall('browser_navigate', {
         session: 'nonexistent',
-        url: 'https://example.com',
+        url: fixtureBaseUrl,
       });
 
       expect(getTextContent(result)).toContain("not found");
@@ -197,7 +226,7 @@ describe('MCP Server Integration', () => {
         script: 'document.title',
       });
 
-      expect(getTextContent(result)).toBe('"Example Domain"');
+      expect(getTextContent(result)).toBe('"Browserplex Fixture"');
     });
 
     it('evaluates complex expressions', async () => {
@@ -207,8 +236,8 @@ describe('MCP Server Integration', () => {
       });
       const parsed = JSON.parse(getTextContent(result));
 
-      expect(parsed.url).toBe('https://example.com/');
-      expect(parsed.title).toBe('Example Domain');
+      expect(parsed.url).toBe(`${fixtureBaseUrl}/`);
+      expect(parsed.title).toBe('Browserplex Fixture');
     });
   });
 
@@ -264,10 +293,10 @@ describe('MCP Server Integration', () => {
     });
 
     it('clicks an element', async () => {
-      // Navigate to example.com which has a clickable link
+      // Navigate to the fixture page, which has a clickable link.
       await toolCall('browser_navigate', {
         session: 'integration-test',
-        url: 'https://example.com',
+        url: fixtureBaseUrl,
       });
 
       const result = await toolCall('browser_click', {
@@ -290,10 +319,10 @@ describe('MCP Server Integration', () => {
 
   describe('Type Text', () => {
     it('navigates to a page with input', async () => {
-      // Navigate to a page with a search input for testing
+      // Navigate to the fixture page with a search input.
       await toolCall('browser_navigate', {
         session: 'integration-test',
-        url: 'https://www.google.com',
+        url: fixtureBaseUrl,
       });
 
       // Wait for page to load
@@ -301,10 +330,9 @@ describe('MCP Server Integration', () => {
     });
 
     it('types into an input field', async () => {
-      // Try to type into Google's search box
       const result = await toolCall('browser_type', {
         session: 'integration-test',
-        selector: 'textarea[name="q"], input[name="q"]',
+        selector: 'textarea[name="q"]',
         text: 'browserplex test',
       });
 
@@ -314,16 +342,16 @@ describe('MCP Server Integration', () => {
 
   describe('Navigate Back', () => {
     it('navigates back in history', async () => {
-      // First navigate to example.com
+      // First navigate to one fixture route.
       await toolCall('browser_navigate', {
         session: 'integration-test',
-        url: 'https://example.com',
+        url: `${fixtureBaseUrl}/history-a`,
       });
 
-      // Then navigate to another page
+      // Then navigate to another fixture route.
       await toolCall('browser_navigate', {
         session: 'integration-test',
-        url: 'https://example.org',
+        url: `${fixtureBaseUrl}/history-b`,
       });
 
       // Now go back
@@ -381,14 +409,14 @@ describe('MCP Server Integration', () => {
       // Navigate to trigger network requests
       await toolCall('browser_navigate', {
         session: 'integration-test',
-        url: 'https://example.com',
+        url: `${fixtureBaseUrl}/network`,
       });
 
       const result = await toolCall('browser_network_requests', {
         session: 'integration-test',
       });
 
-      expect(getTextContent(result)).toContain('example.com');
+      expect(getTextContent(result)).toContain(fixtureBaseUrl);
       expect(getTextContent(result)).toContain('GET');
     });
 
@@ -420,7 +448,7 @@ describe('MCP Server Integration', () => {
       const result = await toolCall('browser_tabs', {
         session: 'integration-test',
         action: 'new',
-        url: 'https://example.org',
+        url: `${fixtureBaseUrl}/tab`,
       });
 
       expect(getTextContent(result)).toContain('Created new tab');
@@ -461,7 +489,7 @@ describe('MCP Server Integration', () => {
       // Navigate to a page and inject a select element
       await toolCall('browser_navigate', {
         session: 'integration-test',
-        url: 'https://example.com',
+        url: fixtureBaseUrl,
       });
 
       await toolCall('browser_evaluate', {
