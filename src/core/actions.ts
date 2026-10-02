@@ -449,6 +449,60 @@ export async function browserType(args: {
 
 export async function browserPressKey(args: { session: string; key: string }): Promise<ActionResult> {
   const s = sessionManager.getOrThrow(args.session);
+  const tauri = tauriSession(s);
+  if (tauri) {
+    const parts = args.key.split("+").map((part) => part.trim()).filter(Boolean);
+    const key = parts.pop();
+    if (!key) {
+      throw new Error("key chord must include a key");
+    }
+    const init = {
+      key,
+      altKey: false,
+      ctrlKey: false,
+      metaKey: false,
+      shiftKey: false,
+      bubbles: true,
+      cancelable: true,
+      composed: true,
+    };
+    for (const modifier of parts) {
+      switch (modifier.toLowerCase()) {
+        case "alt":
+        case "option":
+          init.altKey = true;
+          break;
+        case "control":
+        case "ctrl":
+          init.ctrlKey = true;
+          break;
+        case "command":
+        case "cmd":
+        case "meta":
+          init.metaKey = true;
+          break;
+        case "shift":
+          init.shiftKey = true;
+          break;
+        default:
+          throw new Error(`unsupported key modifier '${modifier}'`);
+      }
+    }
+    const serializedInit = JSON.stringify(init);
+    await tauri.command({
+      command: "eval",
+      expression: `(() => {
+        const target = document.activeElement || document.body;
+        const init = ${serializedInit};
+        const keydown = new KeyboardEvent("keydown", init);
+        target.dispatchEvent(keydown);
+        target.dispatchEvent(new KeyboardEvent("keyup", init));
+        return { key: init.key, defaultPrevented: keydown.defaultPrevented };
+      })()`,
+      timeoutMs: 5000,
+    });
+    return { text: `Pressed '${args.key}'` };
+  }
   requirePageBacked(s, "browser_press_key");
   // keyboard.press dispatches at the page level, not at an element — so it
   // operates on whichever element currently has focus (which can be inside
