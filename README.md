@@ -203,7 +203,7 @@ See [`docs/tauri.md`](docs/tauri.md) for the full command set and caveats. In br
 |------|-------------|
 | `browser_click` | Click an element (CSS selector) |
 | `browser_type` | Type text into an input field |
-| `browser_press_key` | Press a keyboard key |
+| `browser_press_key` | Press a keyboard key or focused-element chord (including Tauri sessions) |
 | `browser_hover` | Hover over an element |
 | `browser_drag` | Drag and drop elements |
 | `browser_select_option` | Select dropdown option by value, label, or index |
