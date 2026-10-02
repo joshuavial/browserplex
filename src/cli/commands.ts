@@ -152,6 +152,15 @@ export const COMMANDS: CommandSpec[] = [
     },
     summary: "Screenshot the page",
   },
+  {
+    path: ["content"],
+    tool: "browser_content",
+    flags: {
+      output: { key: "savePath", type: "string", alias: "o", desc: "write serialized HTML to this path" },
+      "max-bytes": { key: "maxBytes", type: "number", desc: "byte cap (default and maximum 2097152)" },
+    },
+    summary: "Capture trusted page HTML to a byte-capped file",
+  },
   // ---- interaction ----
   {
     path: ["click"],
@@ -450,10 +459,13 @@ function buildArgs(spec: CommandSpec, positionals: string[], flags: Record<strin
 
   // output paths: resolve to absolute (daemon rejects non-absolute savePath)
   if (
-    (spec.tool === "browser_take_screenshot" || spec.tool === "browser_save_download") &&
+    (spec.tool === "browser_take_screenshot" || spec.tool === "browser_content" || spec.tool === "browser_save_download") &&
     typeof args.savePath === "string"
   ) {
     args.savePath = path.resolve(process.cwd(), args.savePath as string);
+  }
+  if (spec.tool === "browser_content" && typeof args.savePath !== "string") {
+    throw new CliError("content needs --output <path>");
   }
 
   // eval / electron-eval: script from positional, or stdin when omitted / '-'

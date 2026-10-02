@@ -31,3 +31,11 @@ describe('MCP download schema', () => {
     expect(serverSource).toContain('savePath: z.string()');
   });
 });
+
+describe('MCP page content schema', () => {
+  it('exposes bounded file capture', () => {
+    expect(serverSource).toContain('"browser_content"');
+    expect(serverSource).toContain('savePath: z.string()');
+    expect(serverSource).toContain('maxBytes: z.number().int().min(1).max(2 * 1024 * 1024)');
+  });
+});
