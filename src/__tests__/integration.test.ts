@@ -116,7 +116,7 @@ describe('MCP Server Integration', () => {
       // ARIA snapshot format
       expect(text).toContain('Page: Example Domain');
       expect(text).toContain('URL: https://example.com');
-      expect(text).toContain('heading "Example Domain"');
+      expect(text).toContain('This domain is for use in documentation examples');  // example.com dropped its <h1> in 2026
       expect(text).toContain('[ref=');  // Should have refs
     });
 
@@ -235,11 +235,11 @@ describe('MCP Server Integration', () => {
     it('waits for element', async () => {
       const result = await toolCall('browser_wait_for', {
         session: 'integration-test',
-        selector: 'h1',
+        selector: 'body',
         state: 'visible',
       });
 
-      expect(getTextContent(result)).toBe("Element 'h1' is visible");
+      expect(getTextContent(result)).toBe("Element 'body' is visible");
     });
 
     it('times out for nonexistent element', async () => {
