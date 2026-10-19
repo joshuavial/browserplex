@@ -69,7 +69,7 @@ sessions. The daemon idle-exits once no sessions/clients remain.
 ```bash
 npm install && npm run build      # or: npm i -g browserplex  (provides the `bp` bin)
 
-bp session create web --browser chromium       # auto-spawns the daemon (headless by default; add --headed for a window)
+bp session create web                          # camoufox by default; auto-spawns the daemon (headless by default; add --headed for a window)
 bp navigate https://example.com -s web          # second process, same live session
 bp snapshot -s web --interactive                 # refs (@e1 …) for clicks/types
 bp click @e3 -s web
@@ -95,16 +95,17 @@ the Electron **main** process (the script body receives the Electron module as `
 | `bp daemon status` | Show whether the daemon is running, its pid, and active sessions |
 | `bp daemon stop` | Stop the running daemon |
 | `BROWSERPLEX_IDLE_MS` | Idle-exit grace period in ms (default `300000`; `0` disables idle-exit) |
+| `BROWSERPLEX_BROWSER` | Default browser type when `-b/--browser` / `type` is omitted (default `camoufox`) |
 | `BROWSERPLEX_DIR` | Relocate the runtime dir — daemon socket/pid/log + stored sessions (default `~/.browserplex`) |
 
 ## Browser Types
 
 | Type | Engine | Use Case |
 |------|--------|----------|
-| `chromium` | Chrome/Edge | Default, fast, good DevTools |
+| `chromium` | Chrome/Edge | Fast, good DevTools; trips bot checks (Cloudflare) |
 | `firefox` | Firefox | Standard Firefox browser |
 | `webkit` | Safari | Test Safari rendering, iOS compatibility |
-| `camoufox` | Firefox | Stealth browsing, anti-detection |
+| `camoufox` | Firefox | Default. Stealth browsing, anti-detection |
 | `electron` | Electron | Drive an Electron desktop app (renderer + preload bridge) |
 | `tauri` | Tauri WKWebView | Drive a trusted debug/test Tauri app through its injected automation agent |
 

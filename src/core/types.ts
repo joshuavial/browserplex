@@ -3,6 +3,18 @@ import type { TauriLaunchOptions, TauriSession } from './tauri.js';
 
 export type BrowserType = 'chromium' | 'firefox' | 'webkit' | 'camoufox' | 'electron' | 'tauri';
 
+export const BROWSER_TYPES: readonly BrowserType[] = ['chromium', 'firefox', 'webkit', 'camoufox', 'electron', 'tauri'];
+
+/** Browser used when none is given: $BROWSERPLEX_BROWSER, else camoufox (passes bot walls chromium stalls on). */
+export function defaultBrowserType(): BrowserType {
+  const env = process.env.BROWSERPLEX_BROWSER;
+  if (!env) return 'camoufox';
+  if (!(BROWSER_TYPES as readonly string[]).includes(env)) {
+    throw new Error(`BROWSERPLEX_BROWSER must be one of ${BROWSER_TYPES.join('|')} (got '${env}')`);
+  }
+  return env as BrowserType;
+}
+
 /** Launch options used only when type === 'chromium'. */
 export interface ChromiumLaunchOptions {
   /** Raw Chromium process arguments, e.g. fake-media flags for deterministic tests. */

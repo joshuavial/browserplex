@@ -1,6 +1,7 @@
 import * as path from "node:path";
 import { readFileSync } from "node:fs";
 import type { DaemonResponse } from "../daemon/protocol.js";
+import { defaultBrowserType } from "../core/types.js";
 
 /**
  * Ergonomic `bp` command surface: a declarative table of CommandSpecs consumed by a small
@@ -50,7 +51,7 @@ export const COMMANDS: CommandSpec[] = [
     tool: "session_create",
     positionals: [{ key: "name", required: true, desc: "session name" }],
     flags: {
-      browser: { key: "type", type: "string", alias: "b", desc: "chromium|firefox|webkit|camoufox|electron|tauri" },
+      browser: { key: "type", type: "string", alias: "b", desc: "camoufox (default, or $BROWSERPLEX_BROWSER)|chromium|firefox|webkit|electron|tauri" },
       headless: { type: "boolean", desc: "run headless (default)" },
       headed: { type: "boolean", desc: "open a visible window (any browser type)" },
       "browser-arg": { key: "browserArgs", type: "string[]", desc: "chromium: process arg (repeatable)" },
@@ -91,7 +92,7 @@ export const COMMANDS: CommandSpec[] = [
     ],
     flags: {
       "storage-name": { key: "storageName", type: "string", desc: "stored-session name (default 'default')" },
-      browser: { key: "type", type: "string", alias: "b", desc: "chromium|firefox|webkit|camoufox" },
+      browser: { key: "type", type: "string", alias: "b", desc: "camoufox (default, or $BROWSERPLEX_BROWSER)|chromium|firefox|webkit" },
       headless: { type: "boolean", desc: "run headless (default)" },
       headed: { type: "boolean", desc: "open a visible window" },
     },
@@ -412,6 +413,16 @@ function buildArgs(spec: CommandSpec, positionals: string[], flags: Record<strin
     } else if (d.required && !(d.key === "script")) {
       // 'script' may come from stdin — handled below
       throw new CliError(`Missing required argument <${d.key}>\n\n${usageFor(spec)}`);
+    }
+  }
+
+  // Resolve the default browser client-side so an already-running daemon started under an older
+  // default (or a different $BROWSERPLEX_BROWSER) still gets the caller's choice.
+  if (spec.flags?.browser && args.type === undefined) {
+    try {
+      args.type = defaultBrowserType();
+    } catch (e) {
+      throw new CliError((e as Error).message);
     }
   }
 

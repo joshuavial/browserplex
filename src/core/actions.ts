@@ -21,7 +21,7 @@ function normalizeFrame(frame: unknown): string[] | undefined {
   throw new Error(`frame must be a string or string[], got ${typeof frame}`);
 }
 import type { ElectronApplication } from "playwright";
-import type { ActionResult, BrowserType, BrowserSession } from "./types.js";
+import { defaultBrowserType, type ActionResult, type BrowserType, type BrowserSession } from "./types.js";
 
 /**
  * Core actions: one async function per tool. Each returns an ActionResult or
@@ -152,7 +152,7 @@ export async function sessionCreate(args: {
   windowOwner?: string;
   startupTimeoutMs?: number;
 }): Promise<ActionResult> {
-  const browserType = args.type ?? "chromium";
+  const browserType = args.type ?? defaultBrowserType();
   // All browser types default to headless; `headed` (or headless:false) opts into a visible window.
   // Electron always opens a real window regardless.
   const useHeadless = browserType === "electron" ? false : resolveHeadless(args);
@@ -213,7 +213,7 @@ export async function storageLoad(args: {
   headless?: boolean;
   headed?: boolean;
 }): Promise<ActionResult> {
-  const browserType = args.type ?? "chromium";
+  const browserType = args.type ?? defaultBrowserType();
   if (browserType === "tauri") {
     throw new Error("storage_load is not supported for tauri sessions");
   }

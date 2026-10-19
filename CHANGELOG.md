@@ -1,5 +1,12 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+- **camoufox is the default browser** for `session create` / `storage load` (CLI and MCP). Override
+  per call with `-b/--browser` (`type`), or globally with `BROWSERPLEX_BROWSER`. The CLI resolves the
+  default itself, so a daemon already running from an older build still honours it.
+
 ## [0.6.0] - 2026-06-03
 
 ### Added

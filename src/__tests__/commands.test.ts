@@ -95,3 +95,30 @@ describe('parseCommand: headless/headed flags (gh #1)', () => {
     expect(String(save.args.savePath).startsWith('/')).toBe(true);
   });
 });
+
+describe('parseCommand: default browser', () => {
+  const saved = process.env.BROWSERPLEX_BROWSER;
+  const restore = () => {
+    if (saved === undefined) delete process.env.BROWSERPLEX_BROWSER;
+    else process.env.BROWSERPLEX_BROWSER = saved;
+  };
+
+  it('defaults to camoufox, $BROWSERPLEX_BROWSER overrides, -b wins over both', () => {
+    try {
+      delete process.env.BROWSERPLEX_BROWSER;
+      expect(parseCommand(['session', 'create', 'x']).args.type).toBe('camoufox');
+      expect(parseCommand(['storage', 'load', 'x', 'example.com']).args.type).toBe('camoufox');
+      process.env.BROWSERPLEX_BROWSER = 'chromium';
+      expect(parseCommand(['session', 'create', 'x']).args.type).toBe('chromium');
+      expect(parseCommand(['session', 'create', 'x', '-b', 'webkit']).args.type).toBe('webkit');
+      process.env.BROWSERPLEX_BROWSER = 'chrome';
+      expect(() => parseCommand(['session', 'create', 'x'])).toThrow(/BROWSERPLEX_BROWSER/);
+    } finally {
+      restore();
+    }
+  });
+
+  it('commands without a browser flag get no type', () => {
+    expect(parseCommand(['navigate', 'https://example.com', '-s', 'x']).args.type).toBeUndefined();
+  });
+});

@@ -52,7 +52,7 @@ server.tool(
   "Create a new named browser session",
   {
     name: z.string().describe("Unique name for this browser session"),
-    type: z.enum(["chromium", "firefox", "webkit", "camoufox", "electron", "tauri"]).default("chromium").describe("Browser type: chromium (default), firefox, webkit (Safari), camoufox (stealth Firefox), electron, or tauri (agent-backed Tauri app)"),
+    type: z.enum(["chromium", "firefox", "webkit", "camoufox", "electron", "tauri"]).optional().describe("Browser type: camoufox (stealth Firefox, default; override with $BROWSERPLEX_BROWSER), chromium, firefox, webkit (Safari), electron, or tauri (agent-backed Tauri app)"),
     headless: z.boolean().optional().describe("Run headless. Default: true for browser types that support it (electron/tauri open real app windows regardless)"),
     headed: z.boolean().optional().describe("Open a visible browser window (opt-in; overrides the headless default for any browser type)"),
     browserArgs: z.array(z.string()).optional().describe("chromium only: raw process args, e.g. deterministic fake-media flags"),
@@ -105,7 +105,7 @@ server.tool(
     name: z.string().describe("Name for the new browser session"),
     domain: z.string().describe("Domain to load storage from"),
     storageName: z.string().default("default").describe("Name of the stored session to load"),
-    type: z.enum(["chromium", "firefox", "webkit", "camoufox"]).default("chromium").describe("Browser type"),
+    type: z.enum(["chromium", "firefox", "webkit", "camoufox"]).optional().describe("Browser type (default camoufox, or $BROWSERPLEX_BROWSER)"),
     headless: z.boolean().optional().describe("Run headless. Default: true for all browser types"),
     headed: z.boolean().optional().describe("Open a visible browser window (opt-in; overrides the headless default)"),
   },
