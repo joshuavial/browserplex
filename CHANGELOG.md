@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-11-12
+
 ### Added
 - **Idle session reaper:** the daemon stamps `lastUsedAt` on each session (on create and on every
   command that targets it) and closes sessions idle longer than `BROWSERPLEX_REAP_IDLE_MS` (default
@@ -10,6 +12,7 @@
   daemon itself launched (ledger in `browsers.json`, matched by pid + start time), never other browsers.
 
 ### Changed
+- **Pinned to Node 24:** the CLI and MCP server re-exec themselves on Node 24 (found via `BROWSERPLEX_NODE` or nvm) when started under another major, so the daemon never runs on a Node its native modules were not built for. `engines` and `.nvmrc` say 24.
 - **camoufox is the default browser** for `session create` / `storage load` (CLI and MCP). Override
   per call with `-b/--browser` (`type`), or globally with `BROWSERPLEX_BROWSER`. The CLI resolves the
   default itself, so a daemon already running from an older build still honours it.

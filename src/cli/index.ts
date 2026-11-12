@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import "../node-pin.js";
 import { DaemonClient } from "../daemon/client.js";
 import { parseCommand, render, topUsage, usageFor, CliError } from "./commands.js";
 import { serve, status, stop } from "./meta.js";
