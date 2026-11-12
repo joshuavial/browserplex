@@ -177,12 +177,23 @@ export async function sessionCreate(args: {
   return { text: `Created ${browserType} session '${args.name}'${useHeadless ? "" : " (headed)"}` };
 }
 
+/** Compact human duration, e.g. 45s, 12m, 3h05m, 2d04h. */
+export function formatDuration(ms: number): string {
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h${String(m % 60).padStart(2, "0")}m`;
+  return `${Math.floor(h / 24)}d${String(h % 24).padStart(2, "0")}h`;
+}
+
 export async function sessionList(): Promise<ActionResult> {
   const sessions = sessionManager.list();
   if (sessions.length === 0) {
     return { text: "No active sessions", data: [] };
   }
-  const lines = sessions.map((s) => `- ${s.name} (${s.type}): ${s.url}`);
+  const lines = sessions.map((s) => `- ${s.name} (${s.type}, idle ${formatDuration(s.idleMs)}): ${s.url}`);
   return { text: `Active sessions:\n${lines.join("\n")}`, data: sessions };
 }
 

@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Added
+- **Idle session reaper:** the daemon stamps `lastUsedAt` on each session (on create and on every
+  command that targets it) and closes sessions idle longer than `BROWSERPLEX_REAP_IDLE_MS` (default
+  4h, `0` disables) via the normal destroy path, logging each reap. `bp session list` shows idle
+  time; `--json` adds `lastUsedAt` and `idleMs`. It also kills orphaned browser/app processes the
+  daemon itself launched (ledger in `browsers.json`, matched by pid + start time), never other browsers.
+
 ### Changed
 - **camoufox is the default browser** for `session create` / `storage load` (CLI and MCP). Override
   per call with `-b/--browser` (`type`), or globally with `BROWSERPLEX_BROWSER`. The CLI resolves the

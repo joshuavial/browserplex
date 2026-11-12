@@ -10,16 +10,22 @@ const DAEMON = path.resolve('dist/daemon/server.js');
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** Spawn a daemon in an isolated dir; returns helpers bound to it. */
-async function startDaemon(idleMs: string) {
+async function startDaemon(idleMs: string, env: Record<string, string> = {}) {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'bp-daemon-'));
   const sock = path.join(dir, 'daemon.sock');
   const pidPath = path.join(dir, 'daemon.pid');
+  const logPath = path.join(dir, 'daemon.log');
+  const logFd = await fs.open(logPath, 'a');
   const child = spawn(process.execPath, [DAEMON], {
-    env: { ...process.env, BROWSERPLEX_DIR: dir, BROWSERPLEX_IDLE_MS: idleMs },
-    stdio: 'ignore',
+    env: { ...process.env, BROWSERPLEX_DIR: dir, BROWSERPLEX_IDLE_MS: idleMs, ...env },
+    stdio: ['ignore', 'ignore', logFd.fd],
   });
-  for (let i = 0; i < 50 && !(await fs.access(sock).then(() => true).catch(() => false)); i++) await sleep(100);
-  return { dir, sock, pidPath, child };
+  await logFd.close();
+  // Generous wait: on a loaded machine (full parallel suite) startup can exceed 5s.
+  // The pid file is written just after the socket binds; wait for both.
+  const exists = (f: string) => fs.access(f).then(() => true).catch(() => false);
+  for (let i = 0; i < 200 && !((await exists(sock)) && (await exists(pidPath))); i++) await sleep(100);
+  return { dir, sock, pidPath, logPath, child };
 }
 
 async function readPid(pidPath: string): Promise<number> {
@@ -131,4 +137,97 @@ describe('daemon idle-exit', () => {
     expect(alive(pid)).toBe(false);
     await fs.rm(d.dir, { recursive: true, force: true });
   }, 30_000);
+});
+
+describe('daemon session reaper', () => {
+  async function stop(d: Awaited<ReturnType<typeof startDaemon>>) {
+    try {
+      process.kill(await readPid(d.pidPath), 'SIGTERM');
+    } catch {
+      /* already gone */
+    }
+    await sleep(300);
+    await fs.rm(d.dir, { recursive: true, force: true });
+  }
+  type Listed = { name: string; createdAt: string; lastUsedAt: string; idleMs: number };
+
+  it('stamps lastUsedAt on create and on every command for the session', async () => {
+    const d = await startDaemon('0');
+    try {
+      const c = connect(d.sock);
+      await c.ready;
+      c.send(1, 'session_create', { name: 'stamp', type: 'chromium', headless: true });
+      expect((await c.wait(1))?.ok).toBe(true);
+      c.send(2, 'session_list');
+      const [first] = (await c.wait(2))?.data as Listed[];
+      expect(first.lastUsedAt).toBeTruthy();
+      expect(first.idleMs).toBeGreaterThanOrEqual(0);
+      await sleep(1100);
+      c.send(3, 'session_list'); // listing is not use: idle keeps growing
+      const r3 = await c.wait(3);
+      const [idle] = r3?.data as Listed[];
+      expect(idle.lastUsedAt).toBe(first.lastUsedAt);
+      expect(idle.idleMs).toBeGreaterThanOrEqual(1000);
+      expect(r3?.text).toMatch(/idle \d+s/);
+      c.send(4, 'browser_evaluate', { session: 'stamp', script: '1 + 1' });
+      await c.wait(4);
+      c.send(5, 'session_list');
+      const [used] = (await c.wait(5))?.data as Listed[];
+      expect(Date.parse(used.lastUsedAt)).toBeGreaterThan(Date.parse(first.lastUsedAt));
+      expect(used.createdAt).toBe(first.createdAt);
+      c.socket.end();
+    } finally {
+      await stop(d);
+    }
+  }, 60_000);
+
+  it('reaps a session idle past the threshold and logs it', async () => {
+    const d = await startDaemon('0', { BROWSERPLEX_REAP_IDLE_MS: '1500', BROWSERPLEX_REAP_INTERVAL_MS: '250' });
+    try {
+      const c = connect(d.sock);
+      await c.ready;
+      c.send(1, 'session_create', { name: 'stale', type: 'chromium', headless: true });
+      expect((await c.wait(1))?.ok).toBe(true);
+      let names: string[] = ['stale'];
+      for (let i = 0; i < 60 && names.length; i++) {
+        await sleep(250);
+        c.send(100 + i, 'session_list');
+        names = ((await c.wait(100 + i))?.data as Listed[]).map((s) => s.name);
+      }
+      expect(names).toEqual([]);
+      // The session leaves the list before its browser finishes closing; the log line follows the close.
+      const reapLine = /reaped session 'stale' \(chromium\) idle \d+s/;
+      let logText = '';
+      for (let i = 0; i < 100 && !reapLine.test(logText); i++) {
+        await sleep(100);
+        logText = await fs.readFile(d.logPath, 'utf8');
+      }
+      expect(logText).toMatch(reapLine);
+      c.socket.end();
+    } finally {
+      await stop(d);
+    }
+  }, 60_000);
+
+  it('does not reap a session used within the threshold', async () => {
+    const d = await startDaemon('0', { BROWSERPLEX_REAP_IDLE_MS: '2500', BROWSERPLEX_REAP_INTERVAL_MS: '250' });
+    try {
+      const c = connect(d.sock);
+      await c.ready;
+      c.send(1, 'session_create', { name: 'busy', type: 'chromium', headless: true });
+      expect((await c.wait(1))?.ok).toBe(true);
+      // Keep using it for longer than the threshold; each use resets the clock.
+      for (let i = 0; i < 4; i++) {
+        await sleep(1000);
+        c.send(10 + i, 'browser_evaluate', { session: 'busy', script: '1' });
+        expect((await c.wait(10 + i))?.ok).toBe(true);
+      }
+      c.send(20, 'session_list');
+      expect(((await c.wait(20))?.data as Listed[]).map((s) => s.name)).toEqual(['busy']);
+      expect(await fs.readFile(d.logPath, 'utf8')).not.toMatch(/reaped session/);
+      c.socket.end();
+    } finally {
+      await stop(d);
+    }
+  }, 60_000);
 });

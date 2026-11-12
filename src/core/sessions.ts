@@ -137,6 +137,7 @@ class SessionManager {
       context,
       page,
       createdAt: new Date(),
+      lastUsedAt: new Date(),
       consoleMessages,
       networkRequests,
       downloads,
@@ -152,11 +153,19 @@ class SessionManager {
     return this.sessions.get(name);
   }
 
+  /** Record use of a session (no-op when it does not exist). */
+  touch(name: string): void {
+    const session = this.sessions.get(name);
+    if (session) session.lastUsedAt = new Date();
+  }
+
   getOrThrow(name: string): BrowserSession {
     const session = this.sessions.get(name);
     if (!session) {
       throw new Error(`Session '${name}' not found. Create it first with session_create.`);
     }
+    // Every action on a session resolves it here, so this stamps use for MCP callers too.
+    session.lastUsedAt = new Date();
     return session;
   }
 
@@ -185,7 +194,7 @@ class SessionManager {
     }
   }
 
-  list(): SessionInfo[] {
+  list(now: number = Date.now()): SessionInfo[] {
     const result: SessionInfo[] = [];
     for (const session of this.sessions.values()) {
       result.push({
@@ -195,6 +204,8 @@ class SessionManager {
           ? String(session.tauri?.hello.href ?? "")
           : session.page.url(),
         createdAt: session.createdAt.toISOString(),
+        lastUsedAt: session.lastUsedAt.toISOString(),
+        idleMs: Math.max(0, now - session.lastUsedAt.getTime()),
       });
     }
     return result;

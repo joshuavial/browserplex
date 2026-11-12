@@ -97,6 +97,8 @@ the Electron **main** process (the script body receives the Electron module as `
 | `BROWSERPLEX_IDLE_MS` | Idle-exit grace period in ms (default `300000`; `0` disables idle-exit) |
 | `BROWSERPLEX_BROWSER` | Default browser type when `-b/--browser` / `type` is omitted (default `camoufox`) |
 | `BROWSERPLEX_DIR` | Relocate the runtime dir — daemon socket/pid/log + stored sessions (default `~/.browserplex`) |
+| `BROWSERPLEX_REAP_IDLE_MS` | Close sessions not used for this long, in ms (default `14400000` = 4h; `0` disables the reaper). Each reap is logged to `daemon.log`. The daemon also kills browser/app processes it launched (tracked in `browsers.json` by pid + start time) that outlive their session or daemon |
+| `BROWSERPLEX_REAP_INTERVAL_MS` | How often the reaper runs (default `300000`) |
 
 ## Browser Types
 

@@ -3,6 +3,19 @@ import net from "node:net";
 import { promises as fs } from "node:fs";
 import { sessionManager } from "../core/sessions.js";
 import { actionDispatch } from "../core/dispatch.js";
+import { formatDuration } from "../core/actions.js";
+import {
+  reapIdleMs,
+  reapIntervalMs,
+  staleSessions,
+  listProcesses,
+  updateLedger,
+  findOrphans,
+  readLedger,
+  writeLedger,
+  ledgerPath,
+  killTree,
+} from "../core/reaper.js";
 import {
   BASE_DIR,
   SOCKET_PATH,
@@ -106,7 +119,16 @@ async function handleRequest(line: string): Promise<DaemonResponse> {
     if (!action) {
       return { id, ok: false, error: `Unknown tool: ${req.tool}` };
     }
-    const result = await action(req.args ?? {});
+    // Stamp use before and after, so a long-running command (e.g. wait_for) never looks idle.
+    const target = typeof req.args?.session === "string" ? req.args.session : undefined;
+    if (target) sessionManager.touch(target);
+    let result;
+    try {
+      result = await action(req.args ?? {});
+    } finally {
+      if (target) sessionManager.touch(target);
+    }
+    if (req.tool === "session_create" || req.tool === "storage_load") await recordChildren();
     return {
       id,
       ok: true,
@@ -186,6 +208,62 @@ function onConnection(socket: net.Socket): void {
   });
 }
 
+// ---- idle reaper ----
+const REAP_IDLE_MS = reapIdleMs();
+const LEDGER = ledgerPath(BASE_DIR);
+let reaping = false;
+let reapTimer: ReturnType<typeof setInterval> | null = null;
+
+/**
+ * One reaper pass: destroy sessions idle past the threshold (same path as `bp session destroy`),
+ * then kill ledger-tracked browser/app processes that no longer belong to a live session.
+ */
+async function reapOnce(): Promise<void> {
+  if (reaping || shuttingDown) return;
+  reaping = true;
+  let reapedAny = false;
+  try {
+    const now = Date.now();
+    for (const s of staleSessions(sessionManager.list(now), now, REAP_IDLE_MS)) {
+      // Re-check right before destroying: a command may have arrived since the listing.
+      const live = sessionManager.get(s.name);
+      if (!live || Date.now() - live.lastUsedAt.getTime() <= REAP_IDLE_MS) continue;
+      try {
+        await actionDispatch.session_destroy({ name: s.name });
+        reapedAny = true;
+        log(`reaped session '${s.name}' (${s.type}) idle ${formatDuration(s.idleMs)}, last used ${s.lastUsedAt}`);
+      } catch (e) {
+        log(`reaper could not destroy '${s.name}': ${e instanceof Error ? e.message : String(e)}`);
+      }
+    }
+
+    const procs = await listProcesses();
+    const ledger = updateLedger(await readLedger(LEDGER), procs, process.pid);
+    const busy = sessionManager.list().length > 0 || inFlight > 0;
+    for (const orphan of findOrphans(ledger, procs, process.pid, busy)) {
+      const pids = await killTree(orphan, procs);
+      log(`reaped orphan bp process ${orphan.pid} (+${pids.length - 1} descendants): ${orphan.command.slice(0, 160)}`);
+    }
+    await writeLedger(LEDGER, updateLedger(ledger, await listProcesses(), process.pid));
+  } catch (e) {
+    log(`reaper pass failed: ${e instanceof Error ? e.message : String(e)}`);
+  } finally {
+    reaping = false;
+    // Reaping the last session lets the daemon idle-exit as usual. Only re-arm when something was
+    // reaped, so a routine pass never postpones a pending idle-exit.
+    if (reapedAny) evaluateIdle();
+  }
+}
+
+/** Record this daemon's child processes (the browsers/apps it just launched) in the ledger. */
+async function recordChildren(): Promise<void> {
+  try {
+    await writeLedger(LEDGER, updateLedger(await readLedger(LEDGER), await listProcesses(), process.pid));
+  } catch (e) {
+    log(`could not record child processes: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
 // ---- shutdown (re-entrant guard + force-exit timeout) ----
 let shuttingDown = false;
 async function shutdown(signal: string, server: net.Server): Promise<void> {
@@ -194,6 +272,10 @@ async function shutdown(signal: string, server: net.Server): Promise<void> {
   if (idleTimer) {
     clearTimeout(idleTimer); // no stale idle fire after a signal/RPC shutdown
     idleTimer = null;
+  }
+  if (reapTimer) {
+    clearInterval(reapTimer);
+    reapTimer = null;
   }
   log(`received ${signal}, shutting down`);
   // force-exit backstop so a hung browser close can't wedge the daemon
@@ -284,6 +366,16 @@ async function main(): Promise<void> {
   process.on("SIGTERM", () => void shutdown("SIGTERM", server));
 
   evaluateIdle(); // a daemon spawned but never used still idle-exits after the grace period
+
+  if (REAP_IDLE_MS > 0) {
+    const every = reapIntervalMs();
+    log(`reaper: sessions idle > ${formatDuration(REAP_IDLE_MS)} are closed (checked every ${formatDuration(every)})`);
+    reapTimer = setInterval(() => void reapOnce(), every);
+    reapTimer.unref();
+    void reapOnce(); // clean up orphans left by a previous daemon straight away
+  } else {
+    log("reaper disabled (BROWSERPLEX_REAP_IDLE_MS=0)");
+  }
 }
 
 main().catch((e) => {

@@ -83,6 +83,8 @@ export interface BrowserSession {
   page: Page;
   tauri?: TauriSession;
   createdAt: Date;
+  /** Last time a command targeted this session (stamped on create and on every daemon request). */
+  lastUsedAt: Date;
   consoleMessages: ConsoleMessage[];
   networkRequests: NetworkRequest[];
   downloads: DownloadRecord[];
@@ -95,6 +97,9 @@ export interface SessionInfo {
   type: BrowserType;
   url: string;
   createdAt: string;
+  lastUsedAt: string;
+  /** Milliseconds since lastUsedAt at the time of listing. */
+  idleMs: number;
 }
 
 export interface StoredSession {
